@@ -19,9 +19,6 @@
 #include <unistd.h>
 #include <string.h>
 
-/* Forward declare app_context_t */
-typedef struct app_context app_context_t;
-
 static int raw_sock_fd = -1;
 static app_context_t *global_ctx = NULL;
 

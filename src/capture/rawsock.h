@@ -8,22 +8,19 @@
 
 #include "common.h"
 
-/* Forward declaration */
-struct app_context;
-
 /**
  * Initialize raw socket capture
  * @param ctx Application context
  * @return SYNFLOOD_OK on success
  */
-synflood_ret_t rawsock_init(struct app_context *ctx);
+synflood_ret_t rawsock_init(app_context_t *ctx);
 
 /**
  * Start raw socket packet capture loop
  * @param ctx Application context
  * @return SYNFLOOD_OK on success
  */
-synflood_ret_t rawsock_start(struct app_context *ctx);
+synflood_ret_t rawsock_start(app_context_t *ctx);
 
 /**
  * Stop raw socket packet capture
