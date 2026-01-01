@@ -5,6 +5,7 @@
 
 #include "logger.h"
 #include <systemd/sd-journal.h>
+#include <syslog.h>
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -23,10 +24,10 @@ static const char *level_strings[] = {
 };
 
 static const int sd_priorities[] = {
-    [LOG_LEVEL_DEBUG] = LOG_DEBUG,
-    [LOG_LEVEL_INFO]  = LOG_INFO,
-    [LOG_LEVEL_WARN]  = LOG_WARNING,
-    [LOG_LEVEL_ERROR] = LOG_ERR,
+    [LOG_LEVEL_DEBUG] = 7,  /* LOG_DEBUG */
+    [LOG_LEVEL_INFO]  = 6,  /* LOG_INFO */
+    [LOG_LEVEL_WARN]  = 4,  /* LOG_WARNING */
+    [LOG_LEVEL_ERROR] = 3,  /* LOG_ERR */
 };
 
 static const char *event_type_strings[] = {
@@ -40,14 +41,14 @@ synflood_ret_t logger_init(log_level_t level, bool use_syslog) {
     current_log_level = level;
     use_systemd_journal = use_syslog;
 
-    LOG_INFO("Logger initialized (level=%s, syslog=%s)",
-             level_strings[level], use_syslog ? "yes" : "no");
+    logger_log(LOG_LEVEL_INFO, "Logger initialized (level=%s, syslog=%s)",
+               level_strings[level], use_syslog ? "yes" : "no");
 
     return SYNFLOOD_OK;
 }
 
 void logger_shutdown(void) {
-    LOG_INFO("Logger shutting down");
+    logger_log(LOG_LEVEL_INFO, "Logger shutting down");
 }
 
 void logger_log(log_level_t level, const char *format, ...) {
@@ -99,7 +100,7 @@ void logger_log_event(event_type_t event_type, uint32_t ip_addr,
         sd_journal_send(
             "MESSAGE=%s: IP=%s SYN_COUNT=%u SYN_RECV=%u",
             event_str, ip_str, syn_count, syn_recv_count,
-            "PRIORITY=%d", event_type == EVENT_BLOCKED ? LOG_WARNING : LOG_INFO,
+            "PRIORITY=%d", event_type == EVENT_BLOCKED ? 4 : 6,  /* LOG_WARNING : LOG_INFO */
             "SYSLOG_IDENTIFIER=synflood-detector",
             "EVENT_TYPE=%s", event_str,
             "SOURCE_IP=%s", ip_str,
