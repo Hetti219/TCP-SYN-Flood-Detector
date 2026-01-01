@@ -8,23 +8,20 @@
 
 #include "common.h"
 
-/* Forward declaration */
-struct app_context;
-
 /**
  * Initialize NFQUEUE capture
  * @param ctx Application context
  * @param queue_num NFQUEUE number to use
  * @return SYNFLOOD_OK on success
  */
-synflood_ret_t nfqueue_init(struct app_context *ctx, uint16_t queue_num);
+synflood_ret_t nfqueue_init(app_context_t *ctx, uint16_t queue_num);
 
 /**
  * Start NFQUEUE packet capture loop
  * @param ctx Application context
  * @return SYNFLOOD_OK on success
  */
-synflood_ret_t nfqueue_start(struct app_context *ctx);
+synflood_ret_t nfqueue_start(app_context_t *ctx);
 
 /**
  * Stop NFQUEUE packet capture

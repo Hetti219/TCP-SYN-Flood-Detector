@@ -16,12 +16,9 @@
 #include <netinet/in.h>
 #include <string.h>
 
-/* Forward declare app_context_t */
-typedef struct app_context app_context_t;
-
 static struct nfq_handle *nfq_h = NULL;
 static struct nfq_q_handle *nfq_qh = NULL;
-static int nfq_fd = -1;
+static int nfqueue_sock_fd = -1;
 static app_context_t *global_ctx = NULL;
 
 /* Extract source IP from packet payload */
@@ -189,23 +186,23 @@ synflood_ret_t nfqueue_init(app_context_t *ctx, uint16_t queue_num) {
     }
 
     /* Get file descriptor */
-    nfq_fd = nfq_fd(nfq_h);
-    if (nfq_fd < 0) {
+    nfqueue_sock_fd = nfq_fd(nfq_h);
+    if (nfqueue_sock_fd < 0) {
         LOG_ERROR("Failed to get nfqueue file descriptor");
         nfq_destroy_queue(nfq_qh);
         nfq_close(nfq_h);
         return SYNFLOOD_ERROR;
     }
 
-    ctx->nfqueue_fd = nfq_fd;
+    ctx->nfqueue_fd = nfqueue_sock_fd;
 
-    LOG_INFO("NFQUEUE initialized: queue_num=%u, fd=%d", queue_num, nfq_fd);
+    LOG_INFO("NFQUEUE initialized: queue_num=%u, fd=%d", queue_num, nfqueue_sock_fd);
 
     return SYNFLOOD_OK;
 }
 
 synflood_ret_t nfqueue_start(app_context_t *ctx) {
-    if (!ctx || nfq_fd < 0) {
+    if (!ctx || nfqueue_sock_fd < 0) {
         return SYNFLOOD_ERROR;
     }
 
@@ -215,7 +212,7 @@ synflood_ret_t nfqueue_start(app_context_t *ctx) {
     int rv;
 
     while (ctx->running) {
-        rv = recv(nfq_fd, buf, sizeof(buf), 0);
+        rv = recv(nfqueue_sock_fd, buf, sizeof(buf), 0);
         if (rv < 0) {
             if (ctx->running) {
                 LOG_ERROR("recv() failed on nfqueue");
@@ -238,8 +235,8 @@ void nfqueue_stop(void) {
     }
 
     /* Close socket to break recv() call */
-    if (nfq_fd >= 0) {
-        shutdown(nfq_fd, SHUT_RDWR);
+    if (nfqueue_sock_fd >= 0) {
+        shutdown(nfqueue_sock_fd, SHUT_RDWR);
     }
 }
 
@@ -254,7 +251,7 @@ void nfqueue_cleanup(void) {
         nfq_h = NULL;
     }
 
-    nfq_fd = -1;
+    nfqueue_sock_fd = -1;
     global_ctx = NULL;
 
     LOG_INFO("NFQUEUE cleanup completed");
