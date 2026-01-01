@@ -1,0 +1,36 @@
+# systemd service unit for TCP SYN Flood Detector
+# Software Design Document v1.0
+
+[Unit]
+Description=TCP SYN Flood Detector Daemon
+Documentation=man:synflood-detector(8)
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStartPre=/usr/bin/ipset create -exist synflood_blacklist hash:ip timeout 300 maxelem 65536
+ExecStartPre=/usr/sbin/iptables -C INPUT -m set --match-set synflood_blacklist src -j DROP || /usr/sbin/iptables -I INPUT -m set --match-set synflood_blacklist src -j DROP
+ExecStartPre=/usr/sbin/iptables -C INPUT -p tcp --syn -j NFQUEUE --queue-num 0 || /usr/sbin/iptables -I INPUT -p tcp --syn -j NFQUEUE --queue-num 0
+ExecStart=/usr/local/bin/synflood-detector -c /etc/synflood-detector/synflood-detector.conf
+ExecReload=/bin/kill -HUP $MAINPID
+ExecStopPost=/usr/sbin/iptables -D INPUT -p tcp --syn -j NFQUEUE --queue-num 0 || true
+ExecStopPost=/usr/sbin/iptables -D INPUT -m set --match-set synflood_blacklist src -j DROP || true
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/run
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target
