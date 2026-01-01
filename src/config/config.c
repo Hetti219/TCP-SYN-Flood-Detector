@@ -23,7 +23,7 @@ log_level_t config_parse_log_level(const char *level_str) {
     return LOG_LEVEL_INFO; /* Default */
 }
 
-synflood_ret_t config_load(const char *path, config_t *config) {
+synflood_ret_t config_load(const char *path, synflood_config_t *config) {
     if (!path || !config) {
         return SYNFLOOD_EINVAL;
     }
@@ -32,7 +32,7 @@ synflood_ret_t config_load(const char *path, config_t *config) {
     config_init(&cfg_reader);
 
     /* Set default values */
-    memset(config, 0, sizeof(config_t));
+    memset(config, 0, sizeof(synflood_config_t));
     config->syn_threshold = DEFAULT_SYN_THRESHOLD;
     config->window_ms = DEFAULT_WINDOW_MS;
     config->block_duration_s = DEFAULT_BLOCK_DURATION_S;
@@ -140,7 +140,7 @@ synflood_ret_t config_load(const char *path, config_t *config) {
     return config_validate(config);
 }
 
-synflood_ret_t config_validate(const config_t *config) {
+synflood_ret_t config_validate(const synflood_config_t *config) {
     if (!config) {
         return SYNFLOOD_EINVAL;
     }
@@ -187,12 +187,12 @@ synflood_ret_t config_validate(const config_t *config) {
     return SYNFLOOD_OK;
 }
 
-void config_free(config_t *config) {
+void config_free(synflood_config_t *config) {
     /* Currently nothing to free, but keep for future extensibility */
     (void)config;
 }
 
-void config_print(const config_t *config) {
+void config_print(const synflood_config_t *config) {
     if (!config) {
         return;
     }

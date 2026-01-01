@@ -77,7 +77,7 @@ static synflood_ret_t setup_signals(void) {
 }
 
 /* Initialize all subsystems */
-static synflood_ret_t initialize_subsystems(config_t *config) {
+static synflood_ret_t initialize_subsystems(synflood_config_t *config) {
     synflood_ret_t ret;
 
     /* Initialize logger */
@@ -202,7 +202,7 @@ static void print_usage(const char *prog_name) {
 int main(int argc, char *argv[]) {
     int opt;
     const char *config_path = DEFAULT_CONFIG_PATH;
-    config_t config;
+    synflood_config_t config;
 
     /* Command line options */
     static struct option long_options[] = {
