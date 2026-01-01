@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <time.h>
+#include <limits.h>
 
 /* Version information */
 #define SYNFLOOD_VERSION "1.0.0"
