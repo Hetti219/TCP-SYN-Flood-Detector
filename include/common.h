@@ -100,7 +100,7 @@ typedef struct
     log_level_t log_level;
     bool use_syslog;
     char metrics_socket[PATH_MAX];
-} config_t;
+} synflood_config_t;
 
 /* Core tracking structure - per source IP */
 typedef struct
@@ -158,7 +158,7 @@ typedef struct
 /* Global context structure */
 typedef struct
 {
-    config_t *config;
+    synflood_config_t *config;
     tracker_table_t *tracker;
     whitelist_node_t *whitelist_root;
     metrics_t metrics;
