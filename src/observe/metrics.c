@@ -14,9 +14,6 @@
 #include <string.h>
 #include <errno.h>
 
-/* Forward declare app_context_t */
-typedef struct app_context app_context_t;
-
 static int metrics_sock_fd = -1;
 static pthread_t metrics_thread;
 static volatile bool metrics_running = false;

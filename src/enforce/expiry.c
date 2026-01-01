@@ -11,9 +11,6 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-/* Forward declare app_context_t */
-typedef struct app_context app_context_t;
-
 static pthread_t expiry_thread;
 static volatile bool expiry_running = false;
 static uint32_t check_interval = 10;

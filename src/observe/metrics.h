@@ -8,23 +8,20 @@
 
 #include "common.h"
 
-/* Forward declaration */
-struct app_context;
-
 /**
  * Initialize metrics server
  * @param ctx Application context
  * @param socket_path Path to Unix socket
  * @return SYNFLOOD_OK on success
  */
-synflood_ret_t metrics_init(struct app_context *ctx, const char *socket_path);
+synflood_ret_t metrics_init(app_context_t *ctx, const char *socket_path);
 
 /**
  * Start metrics server thread
  * @param ctx Application context
  * @return SYNFLOOD_OK on success
  */
-synflood_ret_t metrics_start(struct app_context *ctx);
+synflood_ret_t metrics_start(app_context_t *ctx);
 
 /**
  * Stop metrics server
