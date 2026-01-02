@@ -1,0 +1,174 @@
+.TH SYNFLOOD-DETECTOR 8 "2026-01-02" "Version 1.0.0" "System Administration"
+.SH NAME
+synflood-detector \- TCP SYN flood detection and mitigation daemon
+.SH SYNOPSIS
+.B synflood-detector
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B synflood-detector
+is a high-performance daemon for detecting and mitigating TCP SYN flood
+attacks through dynamic firewall rule management. It monitors incoming TCP
+SYN packets using either NFQUEUE or raw sockets, tracks connection attempts
+per source IP, and automatically blocks malicious IPs using ipset and
+iptables.
+.PP
+The daemon operates at line-rate speeds with minimal CPU overhead and can
+handle millions of packets per second on modern hardware.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " " \fIPATH\fR
+Specify configuration file path. Default: \fI/etc/synflood-detector/synflood-detector.conf\fR
+.TP
+.BR \-h ", " \-\-help
+Display help message and exit.
+.TP
+.BR \-v ", " \-\-version
+Display version information and exit.
+.SH SIGNALS
+.TP
+.B SIGTERM, SIGINT
+Gracefully shutdown the daemon. All subsystems are cleaned up properly,
+blocked IPs remain in the ipset, and packet capture is stopped.
+.TP
+.B SIGHUP
+Reload configuration from the configuration file without restarting the daemon.
+The whitelist is also reloaded if the whitelist file path has changed.
+This allows zero-downtime configuration updates.
+.SH CONFIGURATION
+Configuration is stored in libconfig format at
+.I /etc/synflood-detector/synflood-detector.conf
+by default. The configuration file supports the following settings:
+.PP
+.B Detection thresholds:
+.RS
+.IP \(bu 2
+syn_threshold \- SYN packets per second to trigger detection
+.IP \(bu 2
+time_window_s \- Time window for rate calculation
+.IP \(bu 2
+proc_threshold \- SYN_RECV connections in /proc/net/tcp
+.RE
+.PP
+.B Enforcement:
+.RS
+.IP \(bu 2
+ipset_name \- Name of ipset to use for blocking
+.IP \(bu 2
+block_duration_s \- How long to block malicious IPs
+.RE
+.PP
+.B Performance:
+.RS
+.IP \(bu 2
+hash_buckets \- Hash table size for IP tracking
+.IP \(bu 2
+max_tracked_ips \- Maximum IPs to track
+.RE
+.PP
+See
+.I /etc/synflood-detector/synflood-detector.conf
+and
+.I /usr/share/doc/synflood-detector/CONFIGURATION.md
+for complete documentation.
+.SH FILES
+.TP
+.I /etc/synflood-detector/synflood-detector.conf
+Main configuration file
+.TP
+.I /etc/synflood-detector/whitelist.txt
+IP whitelist in CIDR notation (one per line)
+.TP
+.I /var/run/synflood-detector.sock
+UNIX domain socket for metrics queries
+.TP
+.I /var/log/synflood-detector.log
+Log file (when not using syslog)
+.SH EXAMPLES
+.PP
+Start the daemon with default configuration:
+.PP
+.RS
+.B synflood-detector
+.RE
+.PP
+Start with custom configuration file:
+.PP
+.RS
+.B synflood-detector \-c /path/to/config.conf
+.RE
+.PP
+Query current metrics using socat:
+.PP
+.RS
+.B echo "STATS" | socat - UNIX-CONNECT:/var/run/synflood-detector.sock
+.RE
+.PP
+Reload configuration without restart:
+.PP
+.RS
+.B killall -HUP synflood-detector
+.RE
+.SH METRICS
+The daemon provides real-time metrics through a UNIX domain socket at
+.IR /var/run/synflood-detector.sock .
+Supported commands:
+.TP
+.B STATS
+Display comprehensive statistics including packets processed, IPs blocked,
+false positives, and performance metrics.
+.TP
+.B BLOCKED
+List all currently blocked IP addresses.
+.SH SECURITY
+.B synflood-detector
+requires the following Linux capabilities:
+.IP \(bu 2
+CAP_NET_ADMIN \- For managing ipset and iptables rules
+.IP \(bu 2
+CAP_NET_RAW \- For raw socket packet capture (if using raw socket mode)
+.PP
+The daemon should be run as a dedicated user (e.g., \fIsynflood\fR) with
+only these capabilities. See
+.I /usr/lib/systemd/system/synflood-detector.service
+for a hardened systemd service configuration.
+.SH DEPENDENCIES
+.IP \(bu 2
+Linux kernel 3.10+ with NETFILTER_QUEUE support
+.IP \(bu 2
+iptables with ipset module
+.IP \(bu 2
+ipset utility and kernel module
+.IP \(bu 2
+libnetfilter_queue, libmnl, libipset, libconfig, libsystemd
+.SH PERFORMANCE
+Typical performance characteristics:
+.IP \(bu 2
+Packet processing: 1-5 million packets/second
+.IP \(bu 2
+CPU usage: <5% on 1 core at 100k pps
+.IP \(bu 2
+Memory: ~10-50 MB depending on tracked IP count
+.IP \(bu 2
+Latency: <1 microsecond per packet
+.SH EXIT STATUS
+.TP
+.B 0
+Successful execution
+.TP
+.B 1
+Configuration error, initialization failure, or runtime error
+.SH BUGS
+Report bugs at:
+.UR https://github.com/yourusername/synflood-detector/issues
+.UE
+.SH SEE ALSO
+.BR iptables (8),
+.BR ipset (8),
+.BR nfqueue (8)
+.PP
+Full documentation:
+.I /usr/share/doc/synflood-detector/
+.SH AUTHOR
+Sathikash Ervinhettiarachchi
+.SH COPYRIGHT
+Copyright (C) 2026. Licensed under the MIT License.

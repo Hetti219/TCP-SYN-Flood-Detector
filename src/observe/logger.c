@@ -16,6 +16,13 @@
 static log_level_t current_log_level = LOG_LEVEL_INFO;
 static bool use_systemd_journal = true;
 
+/* Rate limiting */
+#define LOG_BURST 100
+#define LOG_RATE_SEC 60
+static time_t last_log_time[4] = {0};
+static int log_count[4] = {0};
+static int suppressed_count[4] = {0};
+
 static const char *level_strings[] = {
     [LOG_LEVEL_DEBUG] = "DEBUG",
     [LOG_LEVEL_INFO]  = "INFO",
@@ -55,6 +62,52 @@ void logger_log(log_level_t level, const char *format, ...) {
     if (level < current_log_level) {
         return;
     }
+
+    /* Rate limiting check */
+    time_t now = time(NULL);
+
+    if (now - last_log_time[level] >= LOG_RATE_SEC) {
+        /* Time window expired - reset counters and log suppression message if needed */
+        if (suppressed_count[level] > 0) {
+            /* Temporarily bypass rate limiting to log suppression message */
+            char suppress_msg[256];
+            snprintf(suppress_msg, sizeof(suppress_msg),
+                    "Suppressed %d %s messages in last %d seconds",
+                    suppressed_count[level], level_strings[level], LOG_RATE_SEC);
+
+            if (use_systemd_journal) {
+                sd_journal_send(
+                    "MESSAGE=%s", suppress_msg,
+                    "PRIORITY=%d", sd_priorities[level],
+                    "SYSLOG_IDENTIFIER=synflood-detector",
+                    NULL
+                );
+            } else {
+                struct timespec ts;
+                clock_gettime(CLOCK_REALTIME, &ts);
+                struct tm tm;
+                localtime_r(&ts.tv_sec, &tm);
+
+                fprintf(stderr, "[%04d-%02d-%02d %02d:%02d:%02d.%03ld] [%s] %s\n",
+                        tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+                        tm.tm_hour, tm.tm_min, tm.tm_sec, ts.tv_nsec / 1000000,
+                        level_strings[level], suppress_msg);
+            }
+
+            suppressed_count[level] = 0;
+        }
+
+        last_log_time[level] = now;
+        log_count[level] = 0;
+    }
+
+    /* Check if we've exceeded the burst limit */
+    if (log_count[level] >= LOG_BURST) {
+        suppressed_count[level]++;
+        return;
+    }
+
+    log_count[level]++;
 
     va_list args;
     char message[1024];

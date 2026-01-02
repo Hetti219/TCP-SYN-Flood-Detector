@@ -26,6 +26,26 @@ add_project_arguments(
   language: 'c'
 )
 
+# Security hardening flags
+security_flags = [
+  '-fstack-protector-strong',
+  '-D_FORTIFY_SOURCE=2',
+  '-Wformat',
+  '-Wformat-security',
+  '-fPIE',
+]
+add_project_arguments(security_flags, language: 'c')
+
+add_project_link_arguments(
+  [
+    '-pie',
+    '-Wl,-z,relro',
+    '-Wl,-z,now',
+    '-Wl,-z,noexecstack',
+  ],
+  language: 'c'
+)
+
 # Dependencies
 libnetfilter_queue_dep = dependency('libnetfilter_queue', required: true)
 libmnl_dep = dependency('libmnl', required: true)
@@ -97,6 +117,9 @@ install_data('docs/CONFIGURATION.md',
 install_data('docs/TROUBLESHOOTING.md',
   install_dir: get_option('datadir') / 'doc' / 'synflood-detector'
 )
+
+# Man page
+install_man('docs/synflood-detector.8')
 
 # Summary
 summary({
