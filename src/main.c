@@ -25,6 +25,7 @@
 
 /* Global application context */
 static app_context_t app_ctx = {0};
+static const char *global_config_path = NULL;
 
 /* Signal handler for graceful shutdown */
 static void signal_handler(int signum) {
@@ -39,7 +40,26 @@ static void signal_handler(int signum) {
 
         case SIGHUP:
             LOG_INFO("Received SIGHUP, reloading configuration...");
-            /* TODO: Implement configuration reload */
+            if (global_config_path && app_ctx.config) {
+                synflood_config_t new_config;
+                if (config_load(global_config_path, &new_config) == SYNFLOOD_OK) {
+                    /* Reload whitelist */
+                    whitelist_node_t *new_whitelist = whitelist_load(new_config.whitelist_file);
+                    if (new_whitelist) {
+                        if (app_ctx.whitelist_root) {
+                            whitelist_free(app_ctx.whitelist_root);
+                        }
+                        app_ctx.whitelist_root = new_whitelist;
+                    }
+
+                    /* Update configuration atomically */
+                    *app_ctx.config = new_config;
+
+                    LOG_INFO("Configuration reloaded successfully");
+                } else {
+                    LOG_ERROR("Failed to reload configuration, keeping current config");
+                }
+            }
             break;
 
         default:
@@ -234,6 +254,7 @@ int main(int argc, char *argv[]) {
     }
 
     app_ctx.config = &config;
+    global_config_path = config_path;
     app_ctx.running = true;
 
     /* Setup signal handlers */
