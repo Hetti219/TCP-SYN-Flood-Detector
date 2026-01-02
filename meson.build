@@ -117,3 +117,70 @@ summary({
   'libconfig': libconfig_dep.found(),
   'libsystemd': libsystemd_dep.found(),
 }, section: 'Dependencies')
+
+# ============================================
+# Testing
+# ============================================
+
+# Unity test framework
+unity_sources = files(
+  'tests/unity/unity.c',
+)
+
+unity_inc = include_directories('tests/unity')
+
+# Common test dependencies (modules without dependencies on system libs)
+test_sources_common = files(
+  'src/config/config.c',
+  'src/analysis/tracker.c',
+  'src/analysis/whitelist.c',
+  'src/observe/logger.c',
+)
+
+# Unit tests
+test_common = executable('test_common',
+  'tests/unit/test_common.c',
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_config = executable('test_config',
+  'tests/unit/test_config.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_whitelist = executable('test_whitelist',
+  'tests/unit/test_whitelist.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_tracker = executable('test_tracker',
+  'tests/unit/test_tracker.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+# Integration tests
+test_detection_flow = executable('test_detection_flow',
+  'tests/integration/test_detection_flow.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+# Register tests with meson
+test('Common utilities', test_common)
+test('Configuration', test_config)
+test('Whitelist', test_whitelist)
+test('IP Tracker', test_tracker)
+test('Detection Flow', test_detection_flow)
