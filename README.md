@@ -4,6 +4,11 @@
 
 A high-performance userspace daemon for detecting and mitigating TCP SYN flood attacks through dynamic firewall rule management. Built with security, performance, and observability in mind.
 
+## Status Badges
+![CI/CD Pipeline](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/ci.yml/badge.svg)
+![CodeQL](https://github.com/YHetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
+
+
 ## Overview
 
 Unlike naive polling-based approaches, this implementation uses a hybrid detection strategy combining:
