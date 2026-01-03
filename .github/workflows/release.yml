@@ -1,0 +1,169 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  build-release:
+    name: Build Release Artifacts
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          meson \
+          ninja-build \
+          libnetfilter-queue-dev \
+          libmnl-dev \
+          libipset-dev \
+          libconfig-dev \
+          libsystemd-dev \
+          pkg-config \
+          tar \
+          gzip
+
+    - name: Build release
+      run: |
+        meson setup build \
+          --prefix=/usr \
+          --sysconfdir=/etc \
+          -Dbuildtype=release \
+          -Doptimization=3 \
+          -Dwarning_level=3
+        ninja -C build
+
+    - name: Run tests
+      run: meson test -C build --verbose --print-errorlogs
+
+    - name: Create installation directory
+      run: |
+        DESTDIR=$PWD/synflood-detector-${{ steps.get_version.outputs.version }} \
+          meson install -C build
+
+    - name: Create tarball
+      run: |
+        tar -czf synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz \
+          synflood-detector-${{ steps.get_version.outputs.version }}
+
+    - name: Generate checksums
+      run: |
+        sha256sum synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz \
+          > synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz.sha256
+
+    - name: Create source tarball
+      run: |
+        git archive --format=tar.gz \
+          --prefix=synflood-detector-${{ steps.get_version.outputs.version }}/ \
+          HEAD > synflood-detector-${{ steps.get_version.outputs.version }}-source.tar.gz
+        sha256sum synflood-detector-${{ steps.get_version.outputs.version }}-source.tar.gz \
+          > synflood-detector-${{ steps.get_version.outputs.version }}-source.tar.gz.sha256
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-artifacts
+        path: |
+          synflood-detector-*.tar.gz
+          synflood-detector-*.sha256
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Get version
+      id: get_version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+        else
+          echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: release-artifacts
+
+    - name: Extract release notes
+      id: release_notes
+      run: |
+        if [ -f CHANGELOG.md ]; then
+          # Extract notes for this version from CHANGELOG
+          awk '/^## \[${{ steps.get_version.outputs.version }}\]/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md > release_notes.md
+        else
+          echo "Release ${{ steps.get_version.outputs.version }}" > release_notes.md
+          echo "" >> release_notes.md
+          echo "## Installation" >> release_notes.md
+          echo "" >> release_notes.md
+          echo "Download the binary tarball for your platform and extract it:" >> release_notes.md
+          echo '```bash' >> release_notes.md
+          echo "tar -xzf synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz" >> release_notes.md
+          echo "cd synflood-detector-${{ steps.get_version.outputs.version }}" >> release_notes.md
+          echo "sudo cp -r * /" >> release_notes.md
+          echo '```' >> release_notes.md
+          echo "" >> release_notes.md
+          echo "See [INSTALL.md](docs/INSTALL.md) for detailed installation instructions." >> release_notes.md
+        fi
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ steps.get_version.outputs.version }}
+        name: Release ${{ steps.get_version.outputs.version }}
+        body_path: release_notes.md
+        draft: false
+        prerelease: false
+        files: |
+          synflood-detector-*.tar.gz
+          synflood-detector-*.sha256
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  publish-documentation:
+    name: Publish Documentation
+    needs: create-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy documentation to GitHub Pages
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./docs
+        destination_dir: docs
+        enable_jekyll: false
+      continue-on-error: true

@@ -1,0 +1,236 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.os }}, ${{ matrix.compiler }})
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+        compiler: [gcc, clang]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          meson \
+          ninja-build \
+          libnetfilter-queue-dev \
+          libmnl-dev \
+          ipset \
+          libipset-dev \
+          libconfig-dev \
+          libsystemd-dev \
+          pkg-config
+
+    - name: Setup compiler
+      run: |
+        if [ "${{ matrix.compiler }}" = "clang" ]; then
+          sudo apt-get install -y clang
+          echo "CC=clang" >> $GITHUB_ENV
+        else
+          echo "CC=gcc" >> $GITHUB_ENV
+        fi
+
+    - name: Configure build
+      run: |
+        meson setup build \
+          --prefix=/usr \
+          --sysconfdir=/etc \
+          -Doptimization=2 \
+          -Dwarning_level=3
+
+    - name: Build project
+      run: ninja -C build
+
+    - name: Run tests
+      run: meson test -C build --verbose --print-errorlogs
+
+    - name: Check installation
+      run: |
+        DESTDIR=$PWD/install-test meson install -C build
+        test -f install-test/usr/bin/synflood-detector
+        test -f install-test/etc/synflood-detector/synflood-detector.conf
+        test -f install-test/usr/share/man/man8/synflood-detector.8
+
+    - name: Upload build artifacts
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-logs-${{ matrix.os }}-${{ matrix.compiler }}
+        path: build/meson-logs/
+        retention-days: 7
+
+  static-analysis:
+    name: Static Analysis
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cppcheck \
+          clang-tidy \
+          meson \
+          ninja-build \
+          libnetfilter-queue-dev \
+          libmnl-dev \
+          libipset-dev \
+          libconfig-dev \
+          libsystemd-dev \
+          pkg-config
+
+    - name: Run cppcheck
+      run: |
+        cppcheck \
+          --enable=all \
+          --suppress=missingIncludeSystem \
+          --suppress=unmatchedSuppression \
+          --error-exitcode=1 \
+          --inline-suppr \
+          -I include/ \
+          src/ \
+          2>&1 | tee cppcheck-report.txt
+      continue-on-error: true
+
+    - name: Run clang-tidy
+      run: |
+        meson setup build -Dwarning_level=3
+        ninja -C build
+        find src/ -name "*.c" -exec \
+          clang-tidy {} \
+          -p=build \
+          --checks='bugprone-*,cert-*,clang-analyzer-*,concurrency-*,performance-*,portability-*,readability-*' \
+          -- -I include/ \
+          2>&1 \; | tee clang-tidy-report.txt
+      continue-on-error: true
+
+    - name: Upload analysis reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: static-analysis-reports
+        path: |
+          cppcheck-report.txt
+          clang-tidy-report.txt
+        retention-days: 30
+
+  security-hardening-check:
+    name: Security Hardening Verification
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          meson \
+          ninja-build \
+          libnetfilter-queue-dev \
+          libmnl-dev \
+          libipset-dev \
+          libconfig-dev \
+          libsystemd-dev \
+          pkg-config \
+          checksec
+
+    - name: Build project
+      run: |
+        meson setup build
+        ninja -C build
+
+    - name: Verify security features
+      run: |
+        echo "Checking security hardening features..."
+        checksec --file=build/synflood-detector
+
+        # Verify specific features are enabled
+        if ! checksec --file=build/synflood-detector | grep -q "Full RELRO"; then
+          echo "ERROR: Full RELRO not enabled"
+          exit 1
+        fi
+
+        if ! checksec --file=build/synflood-detector | grep -q "Canary found"; then
+          echo "ERROR: Stack canary not found"
+          exit 1
+        fi
+
+        if ! checksec --file=build/synflood-detector | grep -q "NX enabled"; then
+          echo "ERROR: NX not enabled"
+          exit 1
+        fi
+
+        if ! checksec --file=build/synflood-detector | grep -q "PIE enabled"; then
+          echo "ERROR: PIE not enabled"
+          exit 1
+        fi
+
+        echo "All security features verified!"
+
+  documentation-check:
+    name: Documentation Validation
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y man-db groff
+
+    - name: Validate man page
+      run: |
+        if [ -f docs/synflood-detector.8 ]; then
+          echo "Validating man page syntax..."
+          man --warnings -E UTF-8 -l -Tutf8 -Z docs/synflood-detector.8 > /dev/null
+          echo "Man page validation passed!"
+        else
+          echo "Warning: Man page not found"
+        fi
+
+    - name: Check documentation completeness
+      run: |
+        echo "Checking for required documentation files..."
+        required_docs=(
+          "README.md"
+          "docs/INSTALL.md"
+          "docs/CONFIGURATION.md"
+          "LICENSE"
+        )
+
+        missing_docs=()
+        for doc in "${required_docs[@]}"; do
+          if [ ! -f "$doc" ]; then
+            missing_docs+=("$doc")
+          fi
+        done
+
+        if [ ${#missing_docs[@]} -ne 0 ]; then
+          echo "Missing documentation files:"
+          printf '%s\n' "${missing_docs[@]}"
+          exit 1
+        fi
+
+        echo "All required documentation files present!"
