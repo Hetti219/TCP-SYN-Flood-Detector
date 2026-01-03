@@ -6,8 +6,7 @@ A high-performance userspace daemon for detecting and mitigating TCP SYN flood a
 
 ## Status Badges
 ![CI/CD Pipeline](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/ci.yml/badge.svg)
-![CodeQL](https://github.com/YHetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
-
+![CodeQL](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
 
 ## Overview
 
