@@ -49,8 +49,8 @@ sudo apt-get install -y \
 1. Fork the repository on GitHub
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR-USERNAME/synflood-detector.git
-   cd synflood-detector
+   git clone https://github.com/Hetti219/TCP-SYN-Flood-Detector.git
+   cd TCP-SYN-Flood-Detector
    ```
 3. Add the upstream repository:
    ```bash
@@ -340,8 +340,8 @@ Contributors will be:
 
 ## Questions?
 
-- Check existing [Issues](https://github.com/USERNAME/REPO/issues)
-- Start a [Discussion](https://github.com/USERNAME/REPO/discussions)
+- Check existing [Issues](https://github.com/Hetti219/TCP-SYN-Flood-Detector/issues)
+- Start a [Discussion](https://github.com/Hetti219/TCP-SYN-Flood-Detector/discussions)
 - Review the [Documentation](../docs/)
 
 ---

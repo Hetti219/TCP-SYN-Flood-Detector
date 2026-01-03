@@ -82,11 +82,9 @@ This directory contains CI/CD workflows for the TCP SYN Flood Detector project.
 Add these badges to your README.md to show build status:
 
 ```markdown
-![CI/CD Pipeline](https://github.com/USERNAME/REPO/actions/workflows/ci.yml/badge.svg)
-![CodeQL](https://github.com/USERNAME/REPO/actions/workflows/codeql.yml/badge.svg)
+![CI/CD Pipeline](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/ci.yml/badge.svg)
+![CodeQL](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
 ```
-
-Replace `USERNAME` and `REPO` with your GitHub username and repository name.
 
 ---
 
