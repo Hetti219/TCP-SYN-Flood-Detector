@@ -8,12 +8,21 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 static const char* test_whitelist_file = "/tmp/synflood_test_whitelist.conf";
 
 void create_test_whitelist(void) {
-    FILE* f = fopen(test_whitelist_file, "w");
-    if (!f) return;
+    /* Use open() with restrictive permissions (0600 - read/write for owner only) */
+    int fd = open(test_whitelist_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0) return;
+
+    FILE* f = fdopen(fd, "w");
+    if (!f) {
+        close(fd);
+        return;
+    }
 
     fprintf(f, "# Test whitelist\n");
     fprintf(f, "127.0.0.0/8\n");

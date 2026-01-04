@@ -7,12 +7,21 @@
 #include "../../src/config/config.h"
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 static const char* test_config_file = "/tmp/synflood_test_config.conf";
 
 void create_test_config(void) {
-    FILE* f = fopen(test_config_file, "w");
-    if (!f) return;
+    /* Use open() with restrictive permissions (0600 - read/write for owner only) */
+    int fd = open(test_config_file, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0) return;
+
+    FILE* f = fdopen(fd, "w");
+    if (!f) {
+        close(fd);
+        return;
+    }
 
     fprintf(f, "detection:\n");
     fprintf(f, "{\n");
