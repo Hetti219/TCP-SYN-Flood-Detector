@@ -33,8 +33,7 @@ static bool parse_tcp_line(const char *line, uint32_t *rem_addr, uint8_t *state)
      * Format: sl local_address rem_address st ...
      * Example: 0: 0100007F:0035 C0A80101:1234 03 ...
      */
-    int parsed = sscanf(line, "%u: %X:%X %X:%X %X",
-                        &sl, &loc_addr, &loc_port, &r_addr, &r_port, &st);
+    int parsed = sscanf(line, "%u: %X:%X %X:%X %X", &sl, &loc_addr, &loc_port, &r_addr, &r_port, &st);
 
     if (parsed < 6) {
         return false;
