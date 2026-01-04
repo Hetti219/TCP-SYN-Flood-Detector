@@ -1,5 +1,79 @@
 # TCP SYN Flood Detector - Installation Guide
 
+## Installation Methods
+
+### Method 1: Automated Installer (Recommended)
+
+The easiest way to install TCP SYN Flood Detector is using our automated installer:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash
+```
+
+**What the installer does:**
+1. Verifies system compatibility (Ubuntu 22.04/24.04, Debian 11/12, x86_64)
+2. Installs runtime dependencies via apt
+3. Downloads latest release from GitHub
+4. Verifies SHA256 checksums
+5. Installs binary, configs, service, and documentation
+6. Interactively configures service and whitelist
+7. Sets up iptables/ipset rules
+
+**Installation options:**
+
+```bash
+# Install specific version
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --version v1.0.0
+
+# Non-interactive mode (use defaults)
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --non-interactive
+
+# Skip dependency installation (if already installed)
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --skip-deps
+
+# Don't enable or start service automatically
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --no-service
+```
+
+**Security note:** If you prefer to review the script before running:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | less
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh -o install.sh
+chmod +x install.sh
+sudo ./install.sh
+```
+
+---
+
+### Method 2: Manual Binary Installation
+
+Download pre-built binaries from [GitHub Releases](https://github.com/Hetti219/TCP-SYN-Flood-Detector/releases):
+
+```bash
+# Set version
+VERSION="v1.0.0"  # Replace with desired version
+
+# Download release
+wget "https://github.com/Hetti219/TCP-SYN-Flood-Detector/releases/download/${VERSION}/synflood-detector-${VERSION}-linux-x86_64.tar.gz"
+
+# Download and verify checksum
+wget "https://github.com/Hetti219/TCP-SYN-Flood-Detector/releases/download/${VERSION}/synflood-detector-${VERSION}-linux-x86_64.tar.gz.sha256"
+sha256sum -c "synflood-detector-${VERSION}-linux-x86_64.tar.gz.sha256"
+
+# Extract
+tar -xzf "synflood-detector-${VERSION}-linux-x86_64.tar.gz"
+cd "synflood-detector-${VERSION}-linux-x86_64"
+
+# Run bundled installer
+sudo ./install.sh
+```
+
+---
+
+### Method 3: Build from Source
+
+For development or customization, you can build from source.
+
 ## System Requirements
 
 - Linux kernel 5.x or later
@@ -206,33 +280,68 @@ sudo ipset list synflood_blacklist
 
 ## Uninstallation
 
-### 1. Stop and Disable Service
+### Automated Uninstallation (Recommended)
+
+The easiest way to uninstall:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/uninstall.sh | sudo bash
+```
+
+Or if you have the repository cloned:
+
+```bash
+sudo ./uninstall.sh
+```
+
+**Uninstaller options:**
+
+```bash
+# Force uninstall without confirmation
+sudo ./uninstall.sh --force
+
+# Keep configuration files
+sudo ./uninstall.sh --keep-configs
+
+# Remove dependencies (use with caution)
+sudo ./uninstall.sh --remove-deps
+```
+
+For complete uninstallation details, see [UNINSTALL.md](UNINSTALL.md).
+
+### Manual Uninstallation
+
+If the automated uninstaller is not available:
+
+#### 1. Stop and Disable Service
 
 ```bash
 sudo systemctl stop synflood-detector
 sudo systemctl disable synflood-detector
 ```
 
-### 2. Remove iptables Rules
+#### 2. Remove iptables Rules
 
 ```bash
 sudo iptables -D INPUT -p tcp --syn -j NFQUEUE --queue-num 0
 sudo iptables -D INPUT -m set --match-set synflood_blacklist src -j DROP
 ```
 
-### 3. Destroy ipset
+#### 3. Destroy ipset
 
 ```bash
 sudo ipset destroy synflood_blacklist
 ```
 
-### 4. Remove Installed Files
+#### 4. Remove Installed Files
 
 ```bash
 sudo rm /usr/local/bin/synflood-detector
 sudo rm -r /etc/synflood-detector
-sudo rm /usr/lib/systemd/system/synflood-detector.service
+sudo rm /usr/local/lib/systemd/system/synflood-detector.service
 sudo rm -r /usr/local/share/doc/synflood-detector
+sudo rm /usr/local/share/man/man8/synflood-detector.8
+sudo systemctl daemon-reload
 ```
 
 ## Troubleshooting Installation

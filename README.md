@@ -120,52 +120,36 @@ FUNCTION process_syn_packet(src_ip, config):
 
 ## Quick Start
 
-### Prerequisites
+### Quick Install (Recommended)
+
+Install using our automated installer:
 
 ```bash
-# Ubuntu/Debian
-sudo apt install build-essential meson ninja-build \
-    libnetfilter-queue-dev libmnl-dev libipset-dev \
-    libconfig-dev libsystemd-dev iptables ipset
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash
 ```
 
-### Build and Install
+This will:
+- Download the latest pre-built binary
+- Install all runtime dependencies
+- Configure systemd service
+- Guide you through initial setup
+
+### Verify Installation
 
 ```bash
-# Configure
-meson setup build --buildtype=release
-
-# Build
-ninja -C build
-
-# Install
-sudo ninja -C build install
-```
-
-### Configure
-
-```bash
-# Edit main configuration
-sudo nano /etc/synflood-detector/synflood-detector.conf
-
-# Add trusted IPs to whitelist
-sudo nano /etc/synflood-detector/whitelist.conf
-```
-
-### Start Service
-
-```bash
-# Enable and start
-sudo systemctl daemon-reload
-sudo systemctl enable synflood-detector
-sudo systemctl start synflood-detector
-
-# Check status
+# Check service status
 sudo systemctl status synflood-detector
 
 # View logs
 sudo journalctl -u synflood-detector -f
+
+# Check metrics
+echo "GET /metrics" | sudo socat - UNIX:/var/run/synflood-detector.sock
 ```
+
+### Manual Installation
+
+For manual installation or building from source, see [INSTALL.md](docs/INSTALL.md)
 
 ## Configuration Example
 

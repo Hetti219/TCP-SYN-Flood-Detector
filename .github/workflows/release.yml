@@ -47,7 +47,7 @@ jobs:
     - name: Build release
       run: |
         meson setup build \
-          --prefix=/usr \
+          --prefix=/usr/local \
           --sysconfdir=/etc \
           -Dbuildtype=release \
           -Doptimization=3 \
@@ -59,13 +59,43 @@ jobs:
 
     - name: Create installation directory
       run: |
-        DESTDIR=$PWD/synflood-detector-${{ steps.get_version.outputs.version }} \
-          meson install -C build
+        VERSION="${{ steps.get_version.outputs.version }}"
+        RELEASE_DIR="synflood-detector-${VERSION}-linux-x86_64"
+
+        # Install to temporary DESTDIR
+        DESTDIR=$PWD/temp meson install -C build
+
+        # Create installer-friendly structure
+        mkdir -p "${RELEASE_DIR}"/{bin,conf,docs,man}
+
+        # Copy binary
+        cp temp/usr/local/bin/synflood-detector "${RELEASE_DIR}/bin/"
+
+        # Copy config files
+        cp temp/etc/synflood-detector/synflood-detector.conf "${RELEASE_DIR}/conf/"
+        cp temp/etc/synflood-detector/whitelist.conf "${RELEASE_DIR}/conf/"
+        cp temp/usr/local/lib/systemd/system/synflood-detector.service "${RELEASE_DIR}/conf/"
+
+        # Copy documentation
+        cp temp/usr/local/share/doc/synflood-detector/*.md "${RELEASE_DIR}/docs/" 2>/dev/null || true
+
+        # Copy man page
+        cp temp/usr/local/share/man/man8/synflood-detector.8 "${RELEASE_DIR}/man/" 2>/dev/null || true
+
+        # Copy installation script
+        cp install.sh "${RELEASE_DIR}/"
+        chmod +x "${RELEASE_DIR}/install.sh"
+
+        # Create VERSION file
+        echo "${VERSION}" > "${RELEASE_DIR}/VERSION"
+
+        # Cleanup temp directory
+        rm -rf temp
 
     - name: Create tarball
       run: |
         tar -czf synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz \
-          synflood-detector-${{ steps.get_version.outputs.version }}
+          synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64
 
     - name: Generate checksums
       run: |
@@ -120,18 +150,53 @@ jobs:
           # Extract notes for this version from CHANGELOG
           awk '/^## \[${{ steps.get_version.outputs.version }}\]/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md > release_notes.md
         else
-          echo "Release ${{ steps.get_version.outputs.version }}" > release_notes.md
-          echo "" >> release_notes.md
-          echo "## Installation" >> release_notes.md
-          echo "" >> release_notes.md
-          echo "Download the binary tarball for your platform and extract it:" >> release_notes.md
-          echo '```bash' >> release_notes.md
-          echo "tar -xzf synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz" >> release_notes.md
-          echo "cd synflood-detector-${{ steps.get_version.outputs.version }}" >> release_notes.md
-          echo "sudo cp -r * /" >> release_notes.md
-          echo '```' >> release_notes.md
-          echo "" >> release_notes.md
-          echo "See [INSTALL.md](docs/INSTALL.md) for detailed installation instructions." >> release_notes.md
+          cat > release_notes.md << 'EOF'
+        Release ${{ steps.get_version.outputs.version }}
+
+        ## Quick Install
+
+        Install using our automated installer:
+
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash
+        ```
+
+        This will automatically:
+        - Download the latest pre-built binary
+        - Install all runtime dependencies
+        - Configure systemd service
+        - Guide you through initial setup
+
+        ## Manual Install
+
+        Download and verify:
+
+        ```bash
+        wget https://github.com/Hetti219/TCP-SYN-Flood-Detector/releases/download/${{ steps.get_version.outputs.version }}/synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz
+        wget https://github.com/Hetti219/TCP-SYN-Flood-Detector/releases/download/${{ steps.get_version.outputs.version }}/synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz.sha256
+        sha256sum -c synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz.sha256
+        ```
+
+        Extract and install:
+
+        ```bash
+        tar -xzf synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz
+        cd synflood-detector-${{ steps.get_version.outputs.version }}-linux-x86_64
+        sudo ./install.sh
+        ```
+
+        ## Documentation
+
+        - [Installation Guide](https://github.com/Hetti219/TCP-SYN-Flood-Detector/blob/main/docs/INSTALL.md)
+        - [Configuration Reference](https://github.com/Hetti219/TCP-SYN-Flood-Detector/blob/main/docs/CONFIGURATION.md)
+        - [Troubleshooting](https://github.com/Hetti219/TCP-SYN-Flood-Detector/blob/main/docs/TROUBLESHOOTING.md)
+
+        ## System Requirements
+
+        - Ubuntu 22.04/24.04 or Debian 11/12
+        - x86_64 architecture
+        - Linux kernel 5.x or later
+        EOF
         fi
 
     - name: Create Release
