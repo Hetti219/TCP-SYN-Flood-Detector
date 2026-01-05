@@ -222,7 +222,7 @@ static void print_usage(const char *prog_name) {
 int main(int argc, char *argv[]) {
     int opt;
     const char *config_path = DEFAULT_CONFIG_PATH;
-    synflood_config_t config;
+    static synflood_config_t config;  /* Static storage - address is valid for program lifetime */
 
     /* Command line options */
     static struct option long_options[] = {
