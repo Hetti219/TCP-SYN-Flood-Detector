@@ -19,6 +19,9 @@
 #include <unistd.h>
 #include <string.h>
 
+/* External signal handler from main.c */
+extern void handle_signals(void);
+
 static int raw_sock_fd = -1;
 static app_context_t *global_ctx = NULL;
 
@@ -150,6 +153,7 @@ synflood_ret_t rawsock_start(app_context_t *ctx) {
 
     unsigned char buffer[65536];
     ssize_t packet_len;
+    uint32_t packet_count = 0;
 
     while (ctx->running) {
         packet_len = recvfrom(raw_sock_fd, buffer, sizeof(buffer), 0, NULL, NULL);
@@ -184,6 +188,12 @@ synflood_ret_t rawsock_start(app_context_t *ctx) {
 
         /* Process SYN packet */
         process_syn_packet_raw(ctx, src_ip);
+
+        /* Check for signals periodically (every 1000 packets) */
+        if (++packet_count >= 1000) {
+            handle_signals();
+            packet_count = 0;
+        }
     }
 
     LOG_INFO("Raw socket packet capture loop stopped");

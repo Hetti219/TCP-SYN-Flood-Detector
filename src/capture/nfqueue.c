@@ -16,6 +16,9 @@
 #include <netinet/in.h>
 #include <string.h>
 
+/* External signal handler from main.c */
+extern void handle_signals(void);
+
 static struct nfq_handle *nfq_h = NULL;
 static struct nfq_q_handle *nfq_qh = NULL;
 static int nfqueue_sock_fd = -1;
@@ -210,6 +213,7 @@ synflood_ret_t nfqueue_start(app_context_t *ctx) {
 
     char buf[4096] __attribute__((aligned));
     int rv;
+    uint32_t packet_count = 0;
 
     while (ctx->running) {
         rv = recv(nfqueue_sock_fd, buf, sizeof(buf), 0);
@@ -222,6 +226,12 @@ synflood_ret_t nfqueue_start(app_context_t *ctx) {
         }
 
         nfq_handle_packet(nfq_h, buf, rv);
+
+        /* Check for signals periodically (every 1000 packets) */
+        if (++packet_count >= 1000) {
+            handle_signals();
+            packet_count = 0;
+        }
     }
 
     LOG_INFO("NFQUEUE packet capture loop stopped");

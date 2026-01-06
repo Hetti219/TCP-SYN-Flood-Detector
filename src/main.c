@@ -27,44 +27,99 @@
 static app_context_t app_ctx = {0};
 static const char *global_config_path = NULL;
 
-/* Signal handler for graceful shutdown */
+/* Signal flags - only atomic operations allowed in signal handlers */
+static volatile sig_atomic_t reload_config_flag = 0;
+static volatile sig_atomic_t shutdown_flag = 0;
+
+/* Signal handler - ASYNC-SIGNAL-SAFE operations only */
 static void signal_handler(int signum) {
     switch (signum) {
         case SIGTERM:
         case SIGINT:
-            LOG_INFO("Received signal %d, shutting down gracefully...", signum);
-            app_ctx.running = false;
-            nfqueue_stop();
-            rawsock_stop();
+            shutdown_flag = 1;
             break;
 
         case SIGHUP:
-            LOG_INFO("Received SIGHUP, reloading configuration...");
-            if (global_config_path && app_ctx.config) {
-                synflood_config_t new_config;
-                if (config_load(global_config_path, &new_config) == SYNFLOOD_OK) {
-                    /* Reload whitelist */
-                    whitelist_node_t *new_whitelist = whitelist_load(new_config.whitelist_file);
-                    if (new_whitelist) {
-                        if (app_ctx.whitelist_root) {
-                            whitelist_free(app_ctx.whitelist_root);
-                        }
-                        app_ctx.whitelist_root = new_whitelist;
-                    }
-
-                    /* Update configuration atomically */
-                    *app_ctx.config = new_config;
-
-                    LOG_INFO("Configuration reloaded successfully");
-                } else {
-                    LOG_ERROR("Failed to reload configuration, keeping current config");
-                }
-            }
+            reload_config_flag = 1;
             break;
 
         default:
             break;
     }
+}
+
+/* Handle configuration reload - called from main loop in safe context */
+static void handle_config_reload(void) {
+    if (!global_config_path || !app_ctx.config) {
+        LOG_ERROR("Cannot reload configuration: invalid state");
+        return;
+    }
+
+    LOG_INFO("Reloading configuration from %s...", global_config_path);
+
+    /* Load new configuration */
+    synflood_config_t new_config;
+    if (config_load(global_config_path, &new_config) != SYNFLOOD_OK) {
+        LOG_ERROR("Failed to load configuration file, keeping current config");
+        return;
+    }
+
+    /* Reload whitelist if path changed or always reload for updates */
+    whitelist_node_t *new_whitelist = whitelist_load(new_config.whitelist_file);
+    if (!new_whitelist && new_config.whitelist_file[0] != '\0') {
+        LOG_WARN("Failed to load whitelist from %s", new_config.whitelist_file);
+        /* Continue with config reload even if whitelist fails */
+    }
+
+    /* Update whitelist atomically */
+    if (new_whitelist) {
+        whitelist_node_t *old_whitelist = app_ctx.whitelist_root;
+        app_ctx.whitelist_root = new_whitelist;
+
+        if (old_whitelist) {
+            whitelist_free(old_whitelist);
+        }
+
+        size_t count = whitelist_count(new_whitelist);
+        LOG_INFO("Reloaded %zu whitelist entries", count);
+    }
+
+    /* Update configuration - memcpy is atomic for aligned struct on most architectures
+     * For critical production use, consider using a config pointer with RCU or double-buffering */
+    synflood_config_t *old_config = app_ctx.config;
+    *old_config = new_config;
+
+    /* Update logger level if changed */
+    logger_set_level(new_config.log_level);
+
+    LOG_INFO("Configuration reloaded successfully");
+    LOG_INFO("  syn_threshold: %u", new_config.syn_threshold);
+    LOG_INFO("  window_ms: %u", new_config.window_ms);
+    LOG_INFO("  block_duration_s: %u", new_config.block_duration_s);
+    LOG_INFO("  log_level: %d", new_config.log_level);
+}
+
+/* Check and handle signals - called periodically from packet capture loops */
+void handle_signals(void) {
+    /* Check shutdown signal */
+    if (shutdown_flag) {
+        LOG_INFO("Received shutdown signal, stopping gracefully...");
+        app_ctx.running = false;
+        nfqueue_stop();
+        rawsock_stop();
+        shutdown_flag = 0;  /* Reset flag */
+    }
+
+    /* Check reload signal */
+    if (reload_config_flag) {
+        handle_config_reload();
+        reload_config_flag = 0;  /* Reset flag */
+    }
+}
+
+/* Get pointer to app context - for signal handling in capture modules */
+app_context_t* get_app_context(void) {
+    return &app_ctx;
 }
 
 /* Setup signal handlers */
