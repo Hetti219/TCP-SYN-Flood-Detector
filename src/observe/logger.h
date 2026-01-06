@@ -23,6 +23,12 @@ synflood_ret_t logger_init(log_level_t level, bool use_syslog);
 void logger_shutdown(void);
 
 /**
+ * Update log level dynamically (for config reload)
+ * @param level New log level
+ */
+void logger_set_level(log_level_t level);
+
+/**
  * Log a message
  * @param level Log level
  * @param format Printf-style format string

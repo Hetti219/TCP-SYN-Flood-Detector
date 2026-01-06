@@ -58,6 +58,10 @@ void logger_shutdown(void) {
     logger_log(LOG_LEVEL_INFO, "Logger shutting down");
 }
 
+void logger_set_level(log_level_t level) {
+    current_log_level = level;
+}
+
 void logger_log(log_level_t level, const char *format, ...) {
     if (level < current_log_level) {
         return;
