@@ -318,7 +318,7 @@ Each development phase has corresponding testing to ensure quality and correctne
 - ✅ FR-06: IP/CIDR whitelist support
 - ✅ FR-07: Configurable logging with verbosity
 - ✅ FR-08: Metrics via Unix socket
-- ⏳ FR-09: Configuration reload via SIGHUP (planned)
+- ✅ FR-09: Configuration reload via SIGHUP
 - ✅ FR-10: Graceful shutdown with cleanup
 
 ### Non-Functional Requirements
