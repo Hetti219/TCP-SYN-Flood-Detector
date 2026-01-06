@@ -5,6 +5,7 @@
 A high-performance userspace daemon for detecting and mitigating TCP SYN flood attacks through dynamic firewall rule management. Built with security, performance, and observability in mind.
 
 ## Status Badges
+
 ![CI/CD Pipeline](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/ci.yml/badge.svg)
 ![CodeQL](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
 
@@ -129,6 +130,7 @@ curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/mai
 ```
 
 This will:
+
 - Download the latest pre-built binary
 - Install all runtime dependencies
 - Configure systemd service
@@ -196,6 +198,7 @@ echo "GET /metrics" | socat - UNIX:/var/run/synflood-detector.sock
 ```
 
 Sample output:
+
 ```
 synflood_packets_total 1234567
 synflood_syn_packets_total 98765
@@ -228,56 +231,28 @@ sudo journalctl -u synflood-detector | grep BLOCKED
 sudo journalctl -u synflood-detector -o json-pretty
 ```
 
-## Testing
-
-### Simulate SYN Flood Attack
-
-```bash
-# Using hping3
-sudo hping3 -S -p 80 --flood --rand-source <target_ip>
-
-# Targeted attack from specific IP
-sudo hping3 -S -p 80 -i u100 -a <spoofed_ip> <target_ip>
-
-# Monitor detection
-sudo journalctl -u synflood-detector -f
-```
-
-### Performance Testing
-
-```bash
-# Build with debug symbols
-meson setup build-debug --buildtype=debug
-
-# Memory profiling
-sudo valgrind --leak-check=full build-debug/synflood-detector
-
-# CPU profiling
-sudo perf record -g -p $(pgrep synflood-detector)
-```
-
 ## Technology Stack
 
-| Component | Technology | Justification |
-|-----------|-----------|---------------|
-| Language | C (C11) | Zero-overhead abstractions, direct syscall access |
-| Build System | Meson + Ninja | Modern, fast, clean dependency handling |
-| Packet Capture | libnetfilter_queue | Kernel-integrated, verdict-based filtering |
-| Firewall Control | libmnl + ipset | Native netlink, no fork/exec overhead |
-| Configuration | libconfig | Human-readable, complex structure support |
-| Logging | systemd-journal | Structured logging, native integration |
+| Component        | Technology         | Justification                                     |
+| ---------------- | ------------------ | ------------------------------------------------- |
+| Language         | C (C11)            | Zero-overhead abstractions, direct syscall access |
+| Build System     | Meson + Ninja      | Modern, fast, clean dependency handling           |
+| Packet Capture   | libnetfilter_queue | Kernel-integrated, verdict-based filtering        |
+| Firewall Control | libmnl + ipset     | Native netlink, no fork/exec overhead             |
+| Configuration    | libconfig          | Human-readable, complex structure support         |
+| Logging          | systemd-journal    | Structured logging, native integration            |
 
 ## Performance Benchmarks
 
 **Test Environment**: 2 CPU cores, 2GB RAM, Ubuntu 24.04
 
-| Metric | Target (NFR) | Achieved |
-|--------|-------------|----------|
-| Detection Latency | < 100ms | ~45ms |
-| Packet Processing | 50,000 PPS | 65,000+ PPS |
-| CPU Usage (idle) | < 5% | ~1% |
-| CPU Usage (attack) | < 10% | ~4% |
-| Memory Usage | < 50MB | 12-35MB |
+| Metric             | Target (NFR) | Achieved    |
+| ------------------ | ------------ | ----------- |
+| Detection Latency  | < 100ms      | ~45ms       |
+| Packet Processing  | 50,000 PPS   | 65,000+ PPS |
+| CPU Usage (idle)   | < 5%         | ~1%         |
+| CPU Usage (attack) | < 10%        | ~4%         |
+| Memory Usage       | < 50MB       | 12-35MB     |
 
 ## Security
 
@@ -322,18 +297,19 @@ synflood-detector/
 
 This project was developed following the V-Model methodology:
 
-| Development Phase | Verification Phase |
-|-------------------|-------------------|
-| Requirements Analysis | Acceptance Testing |
-| System Design | System Testing |
-| Architecture Design | Integration Testing |
-| Module Design | Unit Testing |
+| Development Phase     | Verification Phase  |
+| --------------------- | ------------------- |
+| Requirements Analysis | Acceptance Testing  |
+| System Design         | System Testing      |
+| Architecture Design   | Integration Testing |
+| Module Design         | Unit Testing        |
 
 Each development phase has corresponding testing to ensure quality and correctness.
 
 ## Requirements (FR/NFR)
 
 ### Functional Requirements
+
 - ✅ FR-01: Capture TCP SYN packets via NFQUEUE or raw sockets
 - ✅ FR-02: Maintain per-IP counters with sliding windows
 - ✅ FR-03: Validate via /proc/net/tcp SYN_RECV state
@@ -346,6 +322,7 @@ Each development phase has corresponding testing to ensure quality and correctne
 - ✅ FR-10: Graceful shutdown with cleanup
 
 ### Non-Functional Requirements
+
 - ✅ NFR-01: Detection latency <100ms
 - ✅ NFR-02: Sustain 50,000 SYN/s without packet loss
 - ✅ NFR-03: Memory footprint <50MB
@@ -366,6 +343,7 @@ MIT License - See LICENSE file for details
 ## Author
 
 Developed as part of a portfolio demonstrating:
+
 - Low-level C systems programming
 - Network packet processing and filtering
 - Security automation and threat mitigation
