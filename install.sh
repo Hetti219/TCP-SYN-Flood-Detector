@@ -415,6 +415,20 @@ install_man_page() {
     fi
 }
 
+install_management_tool() {
+    local extract_dir="$1"
+
+    info "Installing synflood-ctl management tool..."
+
+    if [[ -f "${extract_dir}/tools/synflood-ctl" ]]; then
+        install -D -m 0755 "${extract_dir}/tools/synflood-ctl" \
+            "${BIN_DIR}/synflood-ctl"
+        success "synflood-ctl installed to ${BIN_DIR}/synflood-ctl"
+    else
+        warn "synflood-ctl not found in tarball"
+    fi
+}
+
 # ============================================================================
 # Interactive Configuration
 # ============================================================================
@@ -590,6 +604,7 @@ display_status() {
     echo ""
     echo "Installed components:"
     echo "  Binary:        ${BIN_DIR}/synflood-detector"
+    echo "  Management:    ${BIN_DIR}/synflood-ctl"
     echo "  Config:        ${SYSCONF_DIR}/synflood-detector.conf"
     echo "  Whitelist:     ${SYSCONF_DIR}/whitelist.conf"
     echo "  Service:       ${SYSTEMD_DIR}/synflood-detector.service"
@@ -599,27 +614,32 @@ display_status() {
 }
 
 print_next_steps() {
-    echo "Next steps:"
+    echo "Quick Start with synflood-ctl:"
     echo ""
-    echo "  1. Review configuration:"
-    echo "     sudo nano ${SYSCONF_DIR}/synflood-detector.conf"
+    echo "  Check status and statistics:"
+    echo "     sudo synflood-ctl status"
     echo ""
-    echo "  2. Edit whitelist (add trusted IPs):"
-    echo "     sudo nano ${SYSCONF_DIR}/whitelist.conf"
+    echo "  View service health:"
+    echo "     sudo synflood-ctl health"
     echo ""
-    echo "  3. View service status:"
-    echo "     sudo systemctl status synflood-detector"
+    echo "  Apply a configuration preset:"
+    echo "     sudo synflood-ctl preset apply balanced"
     echo ""
-    echo "  4. View logs:"
-    echo "     sudo journalctl -u synflood-detector -f"
+    echo "  View and follow logs:"
+    echo "     sudo synflood-ctl logs -f"
     echo ""
-    echo "  5. View metrics:"
-    echo "     echo 'GET /metrics' | sudo socat - UNIX:/var/run/synflood-detector.sock"
+    echo "  Manage whitelist:"
+    echo "     sudo synflood-ctl whitelist add 192.168.1.100"
+    echo "     sudo synflood-ctl whitelist list"
     echo ""
-    echo "  6. Read documentation:"
-    echo "     cat ${DOC_DIR}/CONFIGURATION.md"
+    echo "  View blocked IPs:"
+    echo "     sudo synflood-ctl blocked list"
     echo ""
-    echo "For help: man synflood-detector"
+    echo "  Get full command reference:"
+    echo "     synflood-ctl help"
+    echo ""
+    echo "For documentation: cat ${DOC_DIR}/CONFIGURATION.md"
+    echo "For man page:      man synflood-detector"
     echo ""
 }
 
@@ -699,6 +719,7 @@ main() {
     install_systemd_service "${extract_dir}"
     install_documentation "${extract_dir}"
     install_man_page "${extract_dir}"
+    install_management_tool "${extract_dir}"
 
     # Setup firewall rules
     setup_ipset
