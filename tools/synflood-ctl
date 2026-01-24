@@ -1568,6 +1568,96 @@ cmd_logs_events() {
 # Preset Commands
 # =============================================================================
 
+# Built-in presets (used when preset files aren't installed)
+declare -A PRESET_DESCRIPTIONS=(
+    ["conservative"]="Low false positives, suitable for learning/testing"
+    ["balanced"]="Good balance between protection and false positives"
+    ["aggressive"]="Maximum protection, may have more false positives"
+    ["high-traffic"]="For high-traffic servers with many legitimate connections"
+)
+
+declare -A PRESET_THRESHOLDS=(
+    ["conservative"]=200
+    ["balanced"]=100
+    ["aggressive"]=50
+    ["high-traffic"]=500
+)
+
+declare -A PRESET_BLOCK_DURATIONS=(
+    ["conservative"]=120
+    ["balanced"]=300
+    ["aggressive"]=600
+    ["high-traffic"]=180
+)
+
+declare -A PRESET_PROC_INTERVALS=(
+    ["conservative"]=10
+    ["balanced"]=5
+    ["aggressive"]=3
+    ["high-traffic"]=5
+)
+
+declare -A PRESET_MAX_TRACKED=(
+    ["conservative"]=10000
+    ["balanced"]=10000
+    ["aggressive"]=10000
+    ["high-traffic"]=50000
+)
+
+declare -A PRESET_HASH_BUCKETS=(
+    ["conservative"]=4096
+    ["balanced"]=4096
+    ["aggressive"]=4096
+    ["high-traffic"]=16384
+)
+
+# Get list of available presets (built-in + custom from presets directory)
+get_available_presets() {
+    local presets=("conservative" "balanced" "aggressive" "high-traffic")
+
+    # Add custom presets from presets directory
+    if [[ -d "$PRESETS_DIR" ]]; then
+        for preset_file in "$PRESETS_DIR"/*.conf; do
+            if [[ -f "$preset_file" ]]; then
+                local preset_name
+                preset_name=$(basename "$preset_file" .conf)
+                # Skip if it's a built-in preset
+                if [[ ! " ${presets[*]} " =~ " ${preset_name} " ]]; then
+                    presets+=("$preset_name")
+                fi
+            fi
+        done
+    fi
+
+    echo "${presets[@]}"
+}
+
+# Check if preset exists (built-in or file)
+preset_exists() {
+    local name="$1"
+
+    # Check built-in presets
+    if [[ -n "${PRESET_THRESHOLDS[$name]:-}" ]]; then
+        return 0
+    fi
+
+    # Check preset file
+    if [[ -f "$PRESETS_DIR/${name}.conf" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Get preset file path (returns empty if using built-in)
+get_preset_file() {
+    local name="$1"
+
+    if [[ -f "$PRESETS_DIR/${name}.conf" ]]; then
+        echo "$PRESETS_DIR/${name}.conf"
+    fi
+}
+
 cmd_preset() {
     local subcmd="${1:-list}"
     shift || true
@@ -1582,6 +1672,9 @@ cmd_preset() {
         apply)
             cmd_preset_apply "$@"
             ;;
+        diff)
+            cmd_preset_diff "$@"
+            ;;
         *)
             print_error "Unknown preset command: $subcmd"
             echo ""
@@ -1589,6 +1682,7 @@ cmd_preset() {
             echo "  list              - List available presets"
             echo "  show <name>       - Show preset details"
             echo "  apply <name>      - Apply a preset configuration"
+            echo "  diff <name>       - Compare preset with current config"
             exit 1
             ;;
     esac
@@ -1599,109 +1693,279 @@ cmd_preset_list() {
     echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
-    echo -e "${BOLD}conservative${NC}"
-    echo -e "  ${DIM}Low false positives, suitable for learning/testing${NC}"
-    echo -e "  Threshold: 200 SYN/sec, Block: 120s"
+    # Show built-in presets
+    echo -e "${BOLD}Built-in Presets${NC}"
     echo ""
 
-    echo -e "${BOLD}balanced${NC} ${GREEN}(recommended)${NC}"
-    echo -e "  ${DIM}Good balance between protection and false positives${NC}"
-    echo -e "  Threshold: 100 SYN/sec, Block: 300s"
+    echo -e "  ${CYAN}conservative${NC}"
+    echo -e "    ${DIM}Low false positives, suitable for learning/testing${NC}"
+    echo -e "    Threshold: 200 SYN/sec, Block: 2m"
     echo ""
 
-    echo -e "${BOLD}aggressive${NC}"
-    echo -e "  ${DIM}Maximum protection, may have more false positives${NC}"
-    echo -e "  Threshold: 50 SYN/sec, Block: 600s"
+    echo -e "  ${CYAN}balanced${NC} ${GREEN}(recommended)${NC}"
+    echo -e "    ${DIM}Good balance between protection and false positives${NC}"
+    echo -e "    Threshold: 100 SYN/sec, Block: 5m"
     echo ""
 
-    echo -e "${BOLD}high-traffic${NC}"
-    echo -e "  ${DIM}For high-traffic servers with many legitimate connections${NC}"
-    echo -e "  Threshold: 500 SYN/sec, Block: 180s"
+    echo -e "  ${CYAN}aggressive${NC}"
+    echo -e "    ${DIM}Maximum protection, may have more false positives${NC}"
+    echo -e "    Threshold: 50 SYN/sec, Block: 10m"
     echo ""
 
-    print_dim "Apply a preset with: $PROGRAM_NAME preset apply <name>"
+    echo -e "  ${CYAN}high-traffic${NC}"
+    echo -e "    ${DIM}For high-traffic servers with many legitimate connections${NC}"
+    echo -e "    Threshold: 500 SYN/sec, Block: 3m"
+    echo ""
+
+    # Show custom presets if any
+    if [[ -d "$PRESETS_DIR" ]]; then
+        local custom_found=false
+        for preset_file in "$PRESETS_DIR"/*.conf; do
+            if [[ -f "$preset_file" ]]; then
+                local preset_name
+                preset_name=$(basename "$preset_file" .conf)
+                # Skip built-in presets
+                if [[ "$preset_name" != "conservative" && "$preset_name" != "balanced" && \
+                      "$preset_name" != "aggressive" && "$preset_name" != "high-traffic" ]]; then
+                    if [[ "$custom_found" == false ]]; then
+                        echo -e "${BOLD}Custom Presets${NC} ${DIM}(in $PRESETS_DIR)${NC}"
+                        echo ""
+                        custom_found=true
+                    fi
+                    echo -e "  ${MAGENTA}${preset_name}${NC}"
+                    # Try to extract description from file
+                    local desc
+                    desc=$(grep -m1 "^# .*Preset$" "$preset_file" 2>/dev/null | sed 's/^# //' || echo "Custom preset")
+                    echo -e "    ${DIM}${desc}${NC}"
+                    echo ""
+                fi
+            fi
+        done
+    fi
+
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "Commands:"
+    echo "  $PROGRAM_NAME preset show <name>   - View preset details"
+    echo "  $PROGRAM_NAME preset apply <name>  - Apply a preset"
+    echo "  $PROGRAM_NAME preset diff <name>   - Compare with current config"
+    echo ""
+
+    if [[ -d "$PRESETS_DIR" ]]; then
+        print_dim "Preset files location: $PRESETS_DIR"
+    fi
 }
 
 cmd_preset_show() {
     local name="${1:-}"
+    local show_file="${2:-}"
 
     if [[ -z "$name" ]]; then
-        print_error "Usage: $PROGRAM_NAME preset show <name>"
+        print_error "Usage: $PROGRAM_NAME preset show <name> [--file]"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
         exit 1
     fi
+
+    if ! preset_exists "$name"; then
+        print_error "Unknown preset: $name"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
+        exit 1
+    fi
+
+    local preset_file
+    preset_file=$(get_preset_file "$name")
 
     print_header "Preset: $name"
     echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
+    # If --file flag or preset file exists and user wants to see it
+    if [[ "$show_file" == "--file" || "$show_file" == "-f" ]] && [[ -f "$preset_file" ]]; then
+        echo ""
+        echo -e "${DIM}File: $preset_file${NC}"
+        echo ""
+        cat "$preset_file"
+        return
+    fi
+
+    # Show preset summary
+    if [[ -f "$preset_file" ]]; then
+        echo -e "${DIM}Source: $preset_file${NC}"
+        echo ""
+
+        # Extract key values from file
+        local threshold window block_duration proc_interval max_tracked hash_buckets
+        threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        proc_interval=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        max_tracked=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        hash_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+
+        # Extract description from comments
+        local desc
+        desc=$(grep -m1 "^# USE THIS PRESET WHEN:" -A1 "$preset_file" 2>/dev/null | tail -1 | sed 's/^#\s*//' || echo "")
+        if [[ -n "$desc" ]]; then
+            echo "Description: ${PRESET_DESCRIPTIONS[$name]:-Custom preset}"
+        fi
+    else
+        echo -e "${DIM}Source: Built-in${NC}"
+        echo ""
+        echo "Description: ${PRESET_DESCRIPTIONS[$name]}"
+
+        local threshold="${PRESET_THRESHOLDS[$name]}"
+        local block_duration="${PRESET_BLOCK_DURATIONS[$name]}"
+        local proc_interval="${PRESET_PROC_INTERVALS[$name]}"
+        local max_tracked="${PRESET_MAX_TRACKED[$name]}"
+        local hash_buckets="${PRESET_HASH_BUCKETS[$name]}"
+    fi
+
+    echo ""
+    echo -e "${BOLD}Detection Settings${NC}"
+    echo "  syn_threshold         = $threshold SYN packets/window"
+    echo "  window_ms             = ${window:-1000} ms"
+    echo "  proc_check_interval_s = $proc_interval seconds"
+    echo ""
+    echo -e "${BOLD}Enforcement Settings${NC}"
+    echo "  block_duration_s      = $block_duration seconds ($(format_duration "$block_duration"))"
+    echo ""
+    echo -e "${BOLD}Resource Limits${NC}"
+    echo "  max_tracked_ips       = $(format_number "$max_tracked")"
+    echo "  hash_buckets          = $(format_number "$hash_buckets")"
+    echo ""
+
+    # Show use cases
     case "$name" in
         conservative)
-            echo ""
-            echo "Description: Low false positives, suitable for learning/testing"
-            echo ""
-            echo "Settings:"
-            echo "  syn_threshold      = 200"
-            echo "  window_ms          = 1000"
-            echo "  block_duration_s   = 120"
-            echo "  proc_check_interval_s = 10"
-            echo ""
-            echo "Best for:"
-            echo "  - New installations"
-            echo "  - Testing and evaluation"
-            echo "  - Low-traffic servers"
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • New installations and testing"
+            echo "  • Low-traffic servers"
+            echo "  • When false positives are unacceptable"
             ;;
         balanced)
-            echo ""
-            echo "Description: Good balance between protection and false positives"
-            echo ""
-            echo "Settings:"
-            echo "  syn_threshold      = 100"
-            echo "  window_ms          = 1000"
-            echo "  block_duration_s   = 300"
-            echo "  proc_check_interval_s = 5"
-            echo ""
-            echo "Best for:"
-            echo "  - Most production servers"
-            echo "  - General-purpose web servers"
-            echo "  - Default recommendation"
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • Most production servers"
+            echo "  • General-purpose web servers"
+            echo "  • Default recommendation for most users"
             ;;
         aggressive)
-            echo ""
-            echo "Description: Maximum protection, may have more false positives"
-            echo ""
-            echo "Settings:"
-            echo "  syn_threshold      = 50"
-            echo "  window_ms          = 1000"
-            echo "  block_duration_s   = 600"
-            echo "  proc_check_interval_s = 3"
-            echo ""
-            echo "Best for:"
-            echo "  - High-security environments"
-            echo "  - Servers under active attack"
-            echo "  - When false positives are acceptable"
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • High-security environments"
+            echo "  • Servers under active attack"
+            echo "  • When you have a good whitelist"
             ;;
         high-traffic)
-            echo ""
-            echo "Description: For high-traffic servers with many legitimate connections"
-            echo ""
-            echo "Settings:"
-            echo "  syn_threshold      = 500"
-            echo "  window_ms          = 1000"
-            echo "  block_duration_s   = 180"
-            echo "  proc_check_interval_s = 5"
-            echo "  max_tracked_ips    = 50000"
-            echo "  hash_buckets       = 16384"
-            echo ""
-            echo "Best for:"
-            echo "  - High-traffic web servers"
-            echo "  - Load balancers"
-            echo "  - CDN edge servers"
-            ;;
-        *)
-            print_error "Unknown preset: $name"
-            print_info "Available presets: conservative, balanced, aggressive, high-traffic"
-            exit 1
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • High-traffic web servers"
+            echo "  • Load balancers and CDN edges"
+            echo "  • Services with 10,000+ concurrent users"
             ;;
     esac
+
+    echo ""
+    print_dim "Use '$PROGRAM_NAME preset show $name --file' to view full config file"
+}
+
+# Helper to format duration
+format_duration() {
+    local seconds=$1
+    if [[ $seconds -ge 3600 ]]; then
+        echo "$((seconds / 3600))h $((seconds % 3600 / 60))m"
+    elif [[ $seconds -ge 60 ]]; then
+        echo "$((seconds / 60))m"
+    else
+        echo "${seconds}s"
+    fi
+}
+
+cmd_preset_diff() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        print_error "Usage: $PROGRAM_NAME preset diff <name>"
+        exit 1
+    fi
+
+    if ! preset_exists "$name"; then
+        print_error "Unknown preset: $name"
+        exit 1
+    fi
+
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        print_error "Current config file not found: $CONFIG_PATH"
+        exit 1
+    fi
+
+    print_header "Comparing '$name' preset with current config"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    # Get preset values
+    local preset_file
+    preset_file=$(get_preset_file "$name")
+
+    local p_threshold p_window p_block p_proc p_max p_buckets
+    if [[ -f "$preset_file" ]]; then
+        p_threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_block=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_proc=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_max=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+    else
+        p_threshold="${PRESET_THRESHOLDS[$name]}"
+        p_window=1000
+        p_block="${PRESET_BLOCK_DURATIONS[$name]}"
+        p_proc="${PRESET_PROC_INTERVALS[$name]}"
+        p_max="${PRESET_MAX_TRACKED[$name]}"
+        p_buckets="${PRESET_HASH_BUCKETS[$name]}"
+    fi
+
+    # Get current values
+    local c_threshold c_window c_block c_proc c_max c_buckets
+    c_threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_block=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_proc=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_max=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+
+    # Compare and display
+    printf "%-25s %-15s %-15s %s\n" "Parameter" "Current" "Preset" "Change"
+    printf "%-25s %-15s %-15s %s\n" "─────────────────────────" "───────────────" "───────────────" "──────"
+
+    compare_value "syn_threshold" "$c_threshold" "$p_threshold"
+    compare_value "window_ms" "$c_window" "$p_window"
+    compare_value "block_duration_s" "$c_block" "$p_block"
+    compare_value "proc_check_interval_s" "$c_proc" "$p_proc"
+    compare_value "max_tracked_ips" "$c_max" "$p_max"
+    compare_value "hash_buckets" "$c_buckets" "$p_buckets"
+
+    echo ""
+    print_dim "Apply this preset with: $PROGRAM_NAME preset apply $name"
+}
+
+compare_value() {
+    local param="$1"
+    local current="$2"
+    local preset="$3"
+
+    local change=""
+    local color=""
+
+    if [[ "$current" == "$preset" ]]; then
+        change="(no change)"
+        color="$DIM"
+    elif [[ "$current" -lt "$preset" ]]; then
+        change="↑ increase"
+        color="$YELLOW"
+    else
+        change="↓ decrease"
+        color="$CYAN"
+    fi
+
+    printf "%-25s %-15s %-15s ${color}%s${NC}\n" "$param" "$current" "$preset" "$change"
 }
 
 cmd_preset_apply() {
@@ -1712,84 +1976,86 @@ cmd_preset_apply() {
 
     if [[ -z "$name" ]]; then
         print_error "Usage: $PROGRAM_NAME preset apply <name>"
-        print_info "Available presets: conservative, balanced, aggressive, high-traffic"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
         exit 1
     fi
 
-    local threshold window block_duration proc_interval max_tracked hash_buckets
+    if ! preset_exists "$name"; then
+        print_error "Unknown preset: $name"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
+        exit 1
+    fi
 
-    case "$name" in
-        conservative)
-            threshold=200
-            window=1000
-            block_duration=120
-            proc_interval=10
-            max_tracked=10000
-            hash_buckets=4096
-            ;;
-        balanced)
-            threshold=100
-            window=1000
-            block_duration=300
-            proc_interval=5
-            max_tracked=10000
-            hash_buckets=4096
-            ;;
-        aggressive)
-            threshold=50
-            window=1000
-            block_duration=600
-            proc_interval=3
-            max_tracked=10000
-            hash_buckets=4096
-            ;;
-        high-traffic)
-            threshold=500
-            window=1000
-            block_duration=180
-            proc_interval=5
-            max_tracked=50000
-            hash_buckets=16384
-            ;;
-        *)
-            print_error "Unknown preset: $name"
-            print_info "Available presets: conservative, balanced, aggressive, high-traffic"
-            exit 1
-            ;;
-    esac
+    local preset_file
+    preset_file=$(get_preset_file "$name")
 
     print_info "Applying '$name' preset..."
 
     # Backup current config
     if [[ -f "$CONFIG_PATH" ]]; then
-        cp "$CONFIG_PATH" "${CONFIG_PATH}.bak.$(date +%Y%m%d_%H%M%S)"
-        print_info "Backed up current configuration"
+        local backup_path="${CONFIG_PATH}.bak.$(date +%Y%m%d_%H%M%S)"
+        cp "$CONFIG_PATH" "$backup_path"
+        print_success "Backed up current configuration to:"
+        print_dim "  $backup_path"
     fi
 
-    # Apply settings
-    local errors=0
+    # If preset file exists, copy it directly
+    if [[ -f "$preset_file" ]]; then
+        print_info "Using preset file: $preset_file"
 
-    sed -i "s|\(syn_threshold[[:space:]]*=[[:space:]]*\)[0-9]*|\1${threshold}|" "$CONFIG_PATH" || ((errors++))
-    sed -i "s|\(window_ms[[:space:]]*=[[:space:]]*\)[0-9]*|\1${window}|" "$CONFIG_PATH" || ((errors++))
-    sed -i "s|\(block_duration_s[[:space:]]*=[[:space:]]*\)[0-9]*|\1${block_duration}|" "$CONFIG_PATH" || ((errors++))
-    sed -i "s|\(proc_check_interval_s[[:space:]]*=[[:space:]]*\)[0-9]*|\1${proc_interval}|" "$CONFIG_PATH" || ((errors++))
-    sed -i "s|\(max_tracked_ips[[:space:]]*=[[:space:]]*\)[0-9]*|\1${max_tracked}|" "$CONFIG_PATH" || ((errors++))
-    sed -i "s|\(hash_buckets[[:space:]]*=[[:space:]]*\)[0-9]*|\1${hash_buckets}|" "$CONFIG_PATH" || ((errors++))
+        if cp "$preset_file" "$CONFIG_PATH"; then
+            print_success "Applied '$name' preset from file"
+        else
+            print_error "Failed to copy preset file"
+            exit 1
+        fi
+    else
+        # Use built-in values and sed
+        local threshold="${PRESET_THRESHOLDS[$name]}"
+        local window=1000
+        local block_duration="${PRESET_BLOCK_DURATIONS[$name]}"
+        local proc_interval="${PRESET_PROC_INTERVALS[$name]}"
+        local max_tracked="${PRESET_MAX_TRACKED[$name]}"
+        local hash_buckets="${PRESET_HASH_BUCKETS[$name]}"
 
-    if [[ $errors -gt 0 ]]; then
-        print_error "Some settings failed to apply"
-        exit 1
+        local errors=0
+
+        sed -i "s|\(syn_threshold[[:space:]]*=[[:space:]]*\)[0-9]*|\1${threshold}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(window_ms[[:space:]]*=[[:space:]]*\)[0-9]*|\1${window}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(block_duration_s[[:space:]]*=[[:space:]]*\)[0-9]*|\1${block_duration}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(proc_check_interval_s[[:space:]]*=[[:space:]]*\)[0-9]*|\1${proc_interval}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(max_tracked_ips[[:space:]]*=[[:space:]]*\)[0-9]*|\1${max_tracked}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(hash_buckets[[:space:]]*=[[:space:]]*\)[0-9]*|\1${hash_buckets}|" "$CONFIG_PATH" || ((errors++))
+
+        if [[ $errors -gt 0 ]]; then
+            print_error "Some settings failed to apply"
+            exit 1
+        fi
+
+        print_success "Applied '$name' preset (built-in)"
     fi
 
-    print_success "Applied '$name' preset"
+    # Show what was applied
     echo ""
-    echo "New settings:"
-    echo "  syn_threshold        = $threshold"
-    echo "  window_ms            = $window"
-    echo "  block_duration_s     = $block_duration"
+    echo -e "${BOLD}New Configuration${NC}"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    local threshold window block_duration proc_interval max_tracked hash_buckets
+    threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    proc_interval=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    max_tracked=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    hash_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+
+    echo "  syn_threshold         = $threshold"
+    echo "  window_ms             = $window"
+    echo "  block_duration_s      = $block_duration ($(format_duration "$block_duration"))"
     echo "  proc_check_interval_s = $proc_interval"
-    echo "  max_tracked_ips      = $max_tracked"
-    echo "  hash_buckets         = $hash_buckets"
+    echo "  max_tracked_ips       = $max_tracked"
+    echo "  hash_buckets          = $hash_buckets"
     echo ""
 
     if systemctl is-active --quiet "$SERVICE_NAME"; then

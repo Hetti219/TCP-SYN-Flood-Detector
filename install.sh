@@ -359,6 +359,21 @@ install_config_files() {
         success "Installed whitelist.conf"
     fi
 
+    # Install configuration presets
+    if [[ -d "${extract_dir}/conf/presets" ]]; then
+        install -d -m 0755 "${SYSCONF_DIR}/presets"
+        for preset_file in "${extract_dir}"/conf/presets/*.conf; do
+            if [[ -f "$preset_file" ]]; then
+                install -m 0644 "$preset_file" "${SYSCONF_DIR}/presets/"
+            fi
+        done
+        # Install README if present
+        if [[ -f "${extract_dir}/conf/presets/README.md" ]]; then
+            install -m 0644 "${extract_dir}/conf/presets/README.md" "${SYSCONF_DIR}/presets/"
+        fi
+        success "Installed configuration presets to ${SYSCONF_DIR}/presets"
+    fi
+
     success "Configuration files installed to ${SYSCONF_DIR}"
 }
 
@@ -607,6 +622,7 @@ display_status() {
     echo "  Management:    ${BIN_DIR}/synflood-ctl"
     echo "  Config:        ${SYSCONF_DIR}/synflood-detector.conf"
     echo "  Whitelist:     ${SYSCONF_DIR}/whitelist.conf"
+    echo "  Presets:       ${SYSCONF_DIR}/presets/"
     echo "  Service:       ${SYSTEMD_DIR}/synflood-detector.service"
     echo "  Documentation: ${DOC_DIR}/"
     echo "  Man page:      man synflood-detector"

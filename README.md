@@ -217,6 +217,33 @@ logging = {
 };
 ```
 
+## Configuration Presets
+
+Instead of manually editing configuration, use pre-built presets optimized for different scenarios:
+
+| Preset | Threshold | Block Duration | Best For |
+|--------|-----------|----------------|----------|
+| **conservative** | 200 SYN/sec | 2 minutes | Learning, testing, low-traffic servers |
+| **balanced** | 100 SYN/sec | 5 minutes | Most production servers (recommended) |
+| **aggressive** | 50 SYN/sec | 10 minutes | High-security, servers under attack |
+| **high-traffic** | 500 SYN/sec | 3 minutes | Popular sites, APIs, CDN edges |
+
+```bash
+# List available presets
+sudo synflood-ctl preset list
+
+# View preset details
+sudo synflood-ctl preset show balanced
+
+# Compare preset with current config
+sudo synflood-ctl preset diff aggressive
+
+# Apply a preset
+sudo synflood-ctl preset apply balanced
+```
+
+Preset files are located in `/etc/synflood-detector/presets/` and can be customized or extended.
+
 ## Monitoring
 
 ### Using synflood-ctl (Recommended)
@@ -324,7 +351,12 @@ synflood-detector/
 ├── conf/
 │   ├── synflood-detector.conf  # Default configuration
 │   ├── whitelist.conf          # Default whitelist
-│   └── synflood-detector.service # systemd unit file
+│   ├── synflood-detector.service # systemd unit file
+│   └── presets/                # Configuration presets
+│       ├── conservative.conf   # Low false positive preset
+│       ├── balanced.conf       # Recommended default preset
+│       ├── aggressive.conf     # Maximum protection preset
+│       └── high-traffic.conf   # High-traffic server preset
 ├── tools/
 │   └── synflood-ctl            # CLI management tool
 ├── docs/
