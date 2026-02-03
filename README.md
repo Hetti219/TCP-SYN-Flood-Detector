@@ -182,7 +182,18 @@ sudo journalctl -u synflood-detector -f
 
 For manual installation or building from source, see [INSTALL.md](docs/INSTALL.md)
 
-## Configuration Example
+## Configuration
+
+The configuration file (`/etc/synflood-detector/synflood-detector.conf`) contains **comprehensive inline documentation** with:
+- Detailed explanations of each parameter
+- Recommended value ranges (conservative, balanced, aggressive)
+- When and why to adjust settings
+- Trade-offs and performance implications
+- Troubleshooting guidance
+
+**The config file itself is the best reference** - it's extensively commented for beginners.
+
+### Quick Reference
 
 ```conf
 detection = {
@@ -216,6 +227,10 @@ logging = {
     metrics_socket = "/var/run/synflood-detector.sock";
 };
 ```
+
+**View full documentation**: `cat /etc/synflood-detector/synflood-detector.conf`
+**Edit configuration**: `sudo synflood-ctl config edit`
+**Reload after changes**: `sudo synflood-ctl reload`
 
 ## Configuration Presets
 
