@@ -33,6 +33,8 @@ INSTALL_VERSION=""
 NON_INTERACTIVE=false
 SKIP_DEPS=false
 NO_SERVICE=false
+FORCE_WIZARD=false
+SKIP_WIZARD=false
 TEMP_DIR=""
 
 # ============================================================================
@@ -82,6 +84,8 @@ Usage: $0 [OPTIONS]
 Options:
   --version VERSION     Install specific version (e.g., v1.0.0)
   --non-interactive    Skip all prompts, use defaults
+  --guided             Force guided setup wizard
+  --no-wizard          Skip guided setup wizard
   --skip-deps          Skip dependency installation
   --no-service         Don't enable or start service
   --help               Show this help message
@@ -587,6 +591,418 @@ configure_whitelist() {
 }
 
 # ============================================================================
+# Guided Setup Wizard
+# ============================================================================
+
+show_welcome_banner() {
+    echo ""
+    echo "╔════════════════════════════════════════════════════╗"
+    echo "║                                                    ║"
+    echo "║   Welcome to SYN Flood Detector Setup!             ║"
+    echo "║                                                    ║"
+    echo "╚════════════════════════════════════════════════════╝"
+    echo ""
+    echo "This wizard will help you configure optimal protection"
+    echo "settings for your server type."
+    echo ""
+    echo "We'll recommend a configuration preset based on your"
+    echo "server environment. This will take less than a minute."
+    echo ""
+}
+
+prompt_server_type() {
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Server Configuration"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "What type of server is this?"
+    echo ""
+    echo "  1) Web server (Apache/Nginx)"
+    echo "     → Public-facing HTTP/HTTPS traffic"
+    echo ""
+    echo "  2) Database server (MySQL/PostgreSQL)"
+    echo "     → Backend database, fewer connections"
+    echo ""
+    echo "  3) Application server"
+    echo "     → API, microservices, or custom apps"
+    echo ""
+    echo "  4) I'm not sure"
+    echo "     → We'll use safe defaults"
+    echo ""
+    echo "  5) Skip this wizard"
+    echo "     → Continue with standard installation"
+    echo ""
+
+    local choice
+    while true; do
+        read -p "Enter choice [1-5]: " -n 1 -r choice
+        echo ""
+
+        case "$choice" in
+            1)
+                echo "web"
+                return 0
+                ;;
+            2)
+                echo "database"
+                return 0
+                ;;
+            3)
+                echo "application"
+                return 0
+                ;;
+            4)
+                echo "unsure"
+                return 0
+                ;;
+            5)
+                echo "skip"
+                return 0
+                ;;
+            *)
+                error "Invalid choice. Please enter 1-5."
+                ;;
+        esac
+    done
+}
+
+get_recommended_preset() {
+    local server_type="$1"
+
+    case "$server_type" in
+        web)
+            echo "balanced"
+            ;;
+        database)
+            echo "conservative"
+            ;;
+        application)
+            echo "balanced"
+            ;;
+        unsure)
+            echo "balanced"
+            ;;
+        *)
+            echo "balanced"
+            ;;
+    esac
+}
+
+explain_preset_recommendation() {
+    local server_type="$1"
+    local preset="$2"
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Recommended Configuration: ${preset^^}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    case "$preset" in
+        balanced)
+            echo "Based on your server type, we recommend the BALANCED preset."
+            echo ""
+            echo "Why BALANCED?"
+            echo "  ✓ Optimized for web servers and applications"
+            echo "  ✓ Blocks IPs sending 100+ SYN packets/second"
+            echo "  ✓ 5-minute block duration (good deterrent)"
+            echo "  ✓ Low false positive rate"
+            echo "  ✓ Suitable for most production environments"
+            echo ""
+            echo "This preset provides strong protection against SYN flood"
+            echo "attacks while allowing legitimate traffic spikes."
+            ;;
+        conservative)
+            echo "Based on your server type, we recommend the CONSERVATIVE preset."
+            echo ""
+            echo "Why CONSERVATIVE?"
+            echo "  ✓ Optimized for database servers"
+            echo "  ✓ Blocks IPs sending 200+ SYN packets/second"
+            echo "  ✓ 2-minute block duration (minimal disruption)"
+            echo "  ✓ Very low false positive rate"
+            echo "  ✓ Stability-focused for critical services"
+            echo ""
+            echo "This preset minimizes the risk of blocking legitimate"
+            echo "connections to your database."
+            ;;
+        aggressive)
+            echo "Based on your server type, we recommend the AGGRESSIVE preset."
+            echo ""
+            echo "Why AGGRESSIVE?"
+            echo "  ✓ Maximum protection for high-risk servers"
+            echo "  ✓ Blocks IPs sending 50+ SYN packets/second"
+            echo "  ✓ 10-minute block duration (strong deterrent)"
+            echo "  ✓ Best for servers under active attack"
+            echo "  ✓ High-security environments"
+            echo ""
+            echo "This preset provides the strongest protection but may"
+            echo "require careful whitelist configuration."
+            ;;
+        high-traffic)
+            echo "Based on your server type, we recommend the HIGH-TRAFFIC preset."
+            echo ""
+            echo "Why HIGH-TRAFFIC?"
+            echo "  ✓ Designed for high-volume servers"
+            echo "  ✓ Blocks IPs sending 500+ SYN packets/second"
+            echo "  ✓ 3-minute block duration"
+            echo "  ✓ Suitable for CDN-backed services"
+            echo "  ✓ Handles large traffic spikes"
+            echo ""
+            echo "This preset is optimized for servers handling thousands"
+            echo "of concurrent connections."
+            ;;
+    esac
+    echo ""
+}
+
+prompt_preset_application() {
+    local preset="$1"
+
+    echo "What would you like to do?"
+    echo "  1) Apply this preset now (recommended)"
+    echo "  2) Show detailed settings first"
+    echo "  3) Skip and use defaults"
+    echo ""
+
+    local choice
+    while true; do
+        read -p "Enter choice [1-3]: " -n 1 -r choice
+        echo ""
+
+        case "$choice" in
+            1)
+                return 0  # Apply now
+                ;;
+            2)
+                return 1  # Show details
+                ;;
+            3)
+                return 2  # Skip
+                ;;
+            *)
+                error "Invalid choice. Please enter 1-3."
+                ;;
+        esac
+    done
+}
+
+show_preset_details_interactive() {
+    local preset="$1"
+    local preset_file="${SYSCONF_DIR}/presets/${preset}.conf"
+
+    if [[ ! -f "$preset_file" ]]; then
+        warn "Preset file not found: $preset_file"
+        return 1
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  ${preset^^} Preset Details"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Extract key settings from preset file
+    local syn_threshold
+    local block_duration
+
+    syn_threshold=$(grep -E '^\s*syn_threshold\s*=' "$preset_file" | sed 's/.*=\s*\([0-9]*\).*/\1/' || echo "N/A")
+    block_duration=$(grep -E '^\s*block_duration_s\s*=' "$preset_file" | sed 's/.*=\s*\([0-9]*\).*/\1/' || echo "N/A")
+
+    echo "Detection:"
+    echo "  • Threshold: ${syn_threshold} SYN packets/second"
+    echo "  • Detection window: 1 second"
+    echo "  • Validation interval: Every 5 seconds"
+    echo ""
+    echo "Enforcement:"
+    echo "  • Block duration: ${block_duration} seconds ($((block_duration / 60)) minutes)"
+    echo "  • Automatic unblock: Yes"
+    echo ""
+
+    case "$preset" in
+        balanced)
+            echo "Use Cases:"
+            echo "  ✓ Production web servers"
+            echo "  ✓ API endpoints"
+            echo "  ✓ Normal traffic patterns"
+            echo "  ✓ Hundreds to thousands of users"
+            ;;
+        conservative)
+            echo "Use Cases:"
+            echo "  ✓ Database servers"
+            echo "  ✓ Critical backend services"
+            echo "  ✓ Low-traffic environments"
+            echo "  ✓ Learning and testing"
+            ;;
+        aggressive)
+            echo "Use Cases:"
+            echo "  ✓ Servers under active attack"
+            echo "  ✓ High-security environments"
+            echo "  ✓ Exposed public services"
+            echo "  ✓ Maximum protection needed"
+            ;;
+        high-traffic)
+            echo "Use Cases:"
+            echo "  ✓ High-volume web servers"
+            echo "  ✓ CDN-backed services"
+            echo "  ✓ Load-balanced environments"
+            echo "  ✓ Thousands of concurrent users"
+            ;;
+    esac
+    echo ""
+
+    # Ask again if they want to apply
+    if prompt_yes_no "Apply ${preset^^} preset now? [Y/n]:" "y"; then
+        return 0  # Apply
+    else
+        return 2  # Skip
+    fi
+}
+
+apply_preset_during_install() {
+    local preset="$1"
+    local extract_dir="$2"
+    local preset_file="${SYSCONF_DIR}/presets/${preset}.conf"
+    local config_file="${SYSCONF_DIR}/synflood-detector.conf"
+    local backup_file="${config_file}.pre-wizard"
+
+    # Validate preset exists
+    if [[ ! -f "$preset_file" ]]; then
+        error "Preset file not found: $preset_file"
+        warn "Continuing with default configuration"
+        return 1
+    fi
+
+    # Create backup
+    info "Backing up default configuration..."
+    if ! cp "$config_file" "$backup_file" 2>/dev/null; then
+        error "Failed to create backup"
+        warn "Skipping preset application for safety"
+        return 1
+    fi
+
+    # Apply preset
+    info "Applying ${preset} preset..."
+    if ! cp "$preset_file" "$config_file" 2>/dev/null; then
+        error "Failed to apply preset"
+
+        # Attempt restore
+        if [[ -f "$backup_file" ]]; then
+            warn "Restoring backup..."
+            cp "$backup_file" "$config_file" 2>/dev/null || true
+        fi
+
+        return 1
+    fi
+
+    success "Preset applied successfully!"
+    info "Original config saved to: ${backup_file}"
+    echo ""
+
+    return 0
+}
+
+run_guided_setup_wizard() {
+    local extract_dir="$1"
+
+    # Show welcome banner
+    show_welcome_banner
+
+    # Prompt for server type
+    local server_type
+    server_type=$(prompt_server_type)
+
+    # Check if user wants to skip
+    if [[ "$server_type" == "skip" ]]; then
+        info "Skipping guided setup wizard"
+        echo ""
+        return 0
+    fi
+
+    # Get recommended preset
+    local preset
+    preset=$(get_recommended_preset "$server_type")
+
+    # Explain recommendation
+    explain_preset_recommendation "$server_type" "$preset"
+
+    # Prompt for preset application
+    local action
+    if prompt_preset_application "$preset"; then
+        action="apply"
+    else
+        action_code=$?
+        if [[ $action_code -eq 1 ]]; then
+            action="details"
+        else
+            action="skip"
+        fi
+    fi
+
+    # Handle user choice
+    case "$action" in
+        apply)
+            apply_preset_during_install "$preset" "$extract_dir"
+            ;;
+        details)
+            if show_preset_details_interactive "$preset"; then
+                apply_preset_during_install "$preset" "$extract_dir"
+            else
+                info "Using default configuration"
+                echo ""
+            fi
+            ;;
+        skip)
+            info "Using default configuration"
+            echo ""
+            ;;
+    esac
+
+    # Provide guidance for later changes
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    info "You can change presets anytime with:"
+    echo "    sudo synflood-ctl preset list"
+    echo "    sudo synflood-ctl preset apply <name>"
+    echo ""
+}
+
+should_show_guided_setup() {
+    # Skip if user explicitly requested to skip wizard
+    if [[ "${SKIP_WIZARD}" == "true" ]]; then
+        return 1
+    fi
+
+    # Force wizard if user explicitly requested it
+    if [[ "${FORCE_WIZARD}" == "true" ]]; then
+        return 0
+    fi
+
+    # Skip if non-interactive mode
+    if [[ "${NON_INTERACTIVE}" == "true" ]]; then
+        return 1
+    fi
+
+    # Skip if not a TTY (piped install)
+    if [[ ! -t 0 ]]; then
+        return 1
+    fi
+
+    # Skip if config already exists (upgrade scenario)
+    if [[ -f "${SYSCONF_DIR}/synflood-detector.conf" ]]; then
+        # Check if it's not a fresh .new file
+        if ! grep -q "Installed by synflood-detector installer" "${SYSCONF_DIR}/synflood-detector.conf" 2>/dev/null; then
+            info "Existing configuration detected, skipping guided setup"
+            info "To change presets: sudo synflood-ctl preset apply <name>"
+            echo ""
+            return 1
+        fi
+    fi
+
+    # Show wizard
+    return 0
+}
+
+# ============================================================================
 # Post-Installation Setup
 # ============================================================================
 
@@ -794,6 +1210,14 @@ main() {
                 NON_INTERACTIVE=true
                 shift
                 ;;
+            --guided)
+                FORCE_WIZARD=true
+                shift
+                ;;
+            --no-wizard)
+                SKIP_WIZARD=true
+                shift
+                ;;
             --skip-deps)
                 SKIP_DEPS=true
                 shift
@@ -861,6 +1285,12 @@ main() {
     setup_iptables_rules
 
     # Interactive configuration
+
+    # Run guided setup wizard (if applicable)
+    if should_show_guided_setup; then
+        run_guided_setup_wizard "${extract_dir}"
+    fi
+
     prompt_enable_service
     prompt_start_service
     prompt_whitelist_ips
