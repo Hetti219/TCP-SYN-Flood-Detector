@@ -136,7 +136,45 @@ This will:
 - Download the latest pre-built binary
 - Install all runtime dependencies
 - Configure systemd service
-- Guide you through initial setup
+- **Guide you through interactive setup** with server type detection and preset recommendations
+
+#### Interactive Setup Wizard
+
+The installer now includes a guided wizard that helps you configure the optimal protection settings:
+
+```
+Welcome to SYN Flood Detector Setup!
+
+What type of server is this?
+  1) Web server (Apache/Nginx)
+  2) Database server (MySQL/PostgreSQL)
+  3) Application server
+  4) I'm not sure
+
+Based on your selection, we recommend the "balanced" profile.
+```
+
+The wizard will:
+- Ask about your server type
+- Recommend an optimal configuration preset
+- Allow you to review detailed settings
+- Automatically apply the preset if you choose
+
+**Installation options:**
+
+```bash
+# Interactive install with guided wizard (default)
+sudo ./install.sh
+
+# Force wizard even on upgrade
+sudo ./install.sh --guided
+
+# Skip wizard and use defaults
+sudo ./install.sh --no-wizard
+
+# Non-interactive mode (skip all prompts)
+sudo ./install.sh --non-interactive
+```
 
 ### Using synflood-ctl (Recommended)
 
