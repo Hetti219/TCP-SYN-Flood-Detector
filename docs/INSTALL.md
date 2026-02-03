@@ -16,8 +16,9 @@ curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/mai
 3. Downloads latest release from GitHub
 4. Verifies SHA256 checksums
 5. Installs binary, configs, service, and documentation
-6. Interactively configures service and whitelist
-7. Sets up iptables/ipset rules
+6. Runs interactive guided setup wizard (new!)
+7. Interactively configures service and whitelist
+8. Sets up iptables/ipset rules
 
 **Installation options:**
 
@@ -25,15 +26,99 @@ curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/mai
 # Install specific version
 curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --version v1.0.0
 
-# Non-interactive mode (use defaults)
+# Non-interactive mode (use defaults, skip wizard)
 curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --non-interactive
+
+# Force guided setup wizard (even on upgrades)
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --guided
+
+# Skip guided setup wizard
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --no-wizard
 
 # Skip dependency installation (if already installed)
 curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --skip-deps
 
 # Don't enable or start service automatically
 curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --no-service
+
+# Combine options
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --no-wizard --no-service
 ```
+
+#### Guided Setup Wizard (New!)
+
+The installer includes an interactive guided setup wizard that helps you configure the optimal protection settings for your server type.
+
+**Wizard Features:**
+- ✅ Server type detection (Web, Database, Application)
+- ✅ Intelligent preset recommendations
+- ✅ Detailed configuration explanations
+- ✅ Preview of preset settings
+- ✅ Automatic preset application
+- ✅ Configuration backup
+
+**Example Wizard Flow:**
+
+```
+╔════════════════════════════════════════════════════╗
+║                                                    ║
+║   Welcome to SYN Flood Detector Setup!             ║
+║                                                    ║
+╚════════════════════════════════════════════════════╝
+
+This wizard will help you configure optimal protection
+settings for your server type.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Server Configuration
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+What type of server is this?
+
+  1) Web server (Apache/Nginx)
+  2) Database server (MySQL/PostgreSQL)
+  3) Application server
+  4) I'm not sure
+  5) Skip this wizard
+
+Enter choice [1-5]: 1
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Recommended Configuration: BALANCED
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Based on "Web server", we recommend the BALANCED preset.
+
+Why BALANCED?
+  ✓ Optimized for web servers and applications
+  ✓ Blocks IPs sending 100+ SYN packets/second
+  ✓ 5-minute block duration (good deterrent)
+  ✓ Low false positive rate
+  ✓ Suitable for most production environments
+
+What would you like to do?
+  1) Apply this preset now (recommended)
+  2) Show detailed settings first
+  3) Skip and use defaults
+
+Enter choice [1-3]: 1
+
+✓ Backing up default configuration...
+✓ Applying balanced preset...
+✓ Preset applied successfully!
+```
+
+**When the wizard runs:**
+- Default: Interactive installs (unless piped or non-interactive flag)
+- Fresh installs: Always shows wizard
+- Upgrades: Skipped by default (preserves existing config)
+- Force with `--guided` flag
+
+**When the wizard is skipped:**
+- Non-interactive mode (`--non-interactive`)
+- Skip flag (`--no-wizard`)
+- Piped installs without TTY
+- Configuration already exists (upgrade)
 
 **Security note:** If you prefer to review the script before running:
 ```bash
