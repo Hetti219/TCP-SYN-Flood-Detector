@@ -20,6 +20,8 @@ Unlike naive polling-based approaches, this implementation uses a hybrid detecti
 
 ## Key Features
 
+- ✅ **Beginner-Friendly CLI**: `synflood-ctl` management tool with intuitive commands
+- ✅ **Configuration Presets**: One-command setup with conservative, balanced, aggressive, and high-traffic presets
 - ✅ **High Performance**: Handles 50,000+ SYN packets/second with <100ms detection latency
 - ✅ **Low Resource Usage**: <5% CPU usage under baseline traffic, <50MB memory footprint
 - ✅ **Dual Capture Modes**: NFQUEUE (primary) and raw socket (fallback)
@@ -136,17 +138,44 @@ This will:
 - Configure systemd service
 - Guide you through initial setup
 
+### Using synflood-ctl (Recommended)
+
+The `synflood-ctl` management tool provides a beginner-friendly interface for all operations:
+
+```bash
+# Check overall status and statistics
+sudo synflood-ctl status
+
+# Run a health check
+sudo synflood-ctl health
+
+# Apply a configuration preset
+sudo synflood-ctl preset apply balanced
+
+# View and follow logs
+sudo synflood-ctl logs -f
+
+# Manage whitelist
+sudo synflood-ctl whitelist add 192.168.1.100
+sudo synflood-ctl whitelist list
+
+# View blocked IPs
+sudo synflood-ctl blocked list
+
+# Get full command reference
+synflood-ctl help
+```
+
 ### Verify Installation
 
 ```bash
-# Check service status
+# Using synflood-ctl (recommended)
+sudo synflood-ctl status
+sudo synflood-ctl health
+
+# Or using standard commands
 sudo systemctl status synflood-detector
-
-# View logs
 sudo journalctl -u synflood-detector -f
-
-# Check metrics
-echo "GET /metrics" | sudo socat - UNIX:/var/run/synflood-detector.sock
 ```
 
 ### Manual Installation
@@ -188,9 +217,55 @@ logging = {
 };
 ```
 
+## Configuration Presets
+
+Instead of manually editing configuration, use pre-built presets optimized for different scenarios:
+
+| Preset | Threshold | Block Duration | Best For |
+|--------|-----------|----------------|----------|
+| **conservative** | 200 SYN/sec | 2 minutes | Learning, testing, low-traffic servers |
+| **balanced** | 100 SYN/sec | 5 minutes | Most production servers (recommended) |
+| **aggressive** | 50 SYN/sec | 10 minutes | High-security, servers under attack |
+| **high-traffic** | 500 SYN/sec | 3 minutes | Popular sites, APIs, CDN edges |
+
+```bash
+# List available presets
+sudo synflood-ctl preset list
+
+# View preset details
+sudo synflood-ctl preset show balanced
+
+# Compare preset with current config
+sudo synflood-ctl preset diff aggressive
+
+# Apply a preset
+sudo synflood-ctl preset apply balanced
+```
+
+Preset files are located in `/etc/synflood-detector/presets/` and can be customized or extended.
+
 ## Monitoring
 
-### View Metrics
+### Using synflood-ctl (Recommended)
+
+```bash
+# Unified status dashboard
+sudo synflood-ctl status
+
+# View metrics
+sudo synflood-ctl metrics
+
+# View blocked IPs
+sudo synflood-ctl blocked list
+
+# Follow logs in real-time
+sudo synflood-ctl logs -f
+
+# View detection events only
+sudo synflood-ctl logs events
+```
+
+### Direct Commands
 
 ```bash
 # Query metrics (Prometheus format)
@@ -211,24 +286,21 @@ synflood_whitelist_hits_total 8901
 ### View Blocked IPs
 
 ```bash
-# List currently blocked IPs
-sudo ipset list synflood_blacklist
+# Using synflood-ctl
+sudo synflood-ctl blocked list
 
-# Watch in real-time
-watch -n 1 'sudo ipset list synflood_blacklist | tail -20'
+# Or using ipset directly
+sudo ipset list synflood_blacklist
 ```
 
 ### View Logs
 
 ```bash
-# Follow live logs
+# Using synflood-ctl
+sudo synflood-ctl logs -f
+
+# Or using journalctl directly
 sudo journalctl -u synflood-detector -f
-
-# View detection events
-sudo journalctl -u synflood-detector | grep BLOCKED
-
-# View with structured fields
-sudo journalctl -u synflood-detector -o json-pretty
 ```
 
 ## Technology Stack
@@ -279,7 +351,14 @@ synflood-detector/
 ├── conf/
 │   ├── synflood-detector.conf  # Default configuration
 │   ├── whitelist.conf          # Default whitelist
-│   └── synflood-detector.service # systemd unit file
+│   ├── synflood-detector.service # systemd unit file
+│   └── presets/                # Configuration presets
+│       ├── conservative.conf   # Low false positive preset
+│       ├── balanced.conf       # Recommended default preset
+│       ├── aggressive.conf     # Maximum protection preset
+│       └── high-traffic.conf   # High-traffic server preset
+├── tools/
+│   └── synflood-ctl            # CLI management tool
 ├── docs/
 │   ├── INSTALL.md              # Installation guide
 │   ├── CONFIGURATION.md        # Configuration reference

@@ -1,0 +1,2241 @@
+#!/bin/bash
+#
+# synflood-ctl - TCP SYN Flood Detector Management Tool
+#
+# A beginner-friendly CLI for managing the TCP SYN Flood Detector service.
+# This tool provides a unified interface for all common operations.
+#
+# Usage: synflood-ctl <command> [options]
+#
+
+set -euo pipefail
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+readonly VERSION="1.0.0"
+readonly PROGRAM_NAME="synflood-ctl"
+readonly SERVICE_NAME="synflood-detector"
+readonly BINARY_PATH="/usr/local/bin/synflood-detector"
+readonly CONFIG_PATH="/etc/synflood-detector/synflood-detector.conf"
+readonly WHITELIST_PATH="/etc/synflood-detector/whitelist.conf"
+readonly METRICS_SOCKET="/var/run/synflood-detector.sock"
+readonly DEFAULT_IPSET_NAME="synflood_blacklist"
+readonly PRESETS_DIR="/etc/synflood-detector/presets"
+
+# Colors for output (disabled if not a terminal)
+if [[ -t 1 ]]; then
+    readonly RED='\033[0;31m'
+    readonly GREEN='\033[0;32m'
+    readonly YELLOW='\033[0;33m'
+    readonly BLUE='\033[0;34m'
+    readonly MAGENTA='\033[0;35m'
+    readonly CYAN='\033[0;36m'
+    readonly WHITE='\033[1;37m'
+    readonly GRAY='\033[0;90m'
+    readonly BOLD='\033[1m'
+    readonly DIM='\033[2m'
+    readonly NC='\033[0m' # No Color
+else
+    readonly RED=''
+    readonly GREEN=''
+    readonly YELLOW=''
+    readonly BLUE=''
+    readonly MAGENTA=''
+    readonly CYAN=''
+    readonly WHITE=''
+    readonly GRAY=''
+    readonly BOLD=''
+    readonly DIM=''
+    readonly NC=''
+fi
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+print_header() {
+    echo -e "${BOLD}${CYAN}$1${NC}"
+}
+
+print_success() {
+    echo -e "${GREEN}✓${NC} $1"
+}
+
+print_error() {
+    echo -e "${RED}✗${NC} $1" >&2
+}
+
+print_warning() {
+    echo -e "${YELLOW}!${NC} $1"
+}
+
+print_info() {
+    echo -e "${BLUE}→${NC} $1"
+}
+
+print_dim() {
+    echo -e "${DIM}$1${NC}"
+}
+
+# Check if running as root
+require_root() {
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This command requires root privileges. Please run with sudo."
+        exit 1
+    fi
+}
+
+# Check if service is installed
+check_installed() {
+    if [[ ! -f "$BINARY_PATH" ]]; then
+        print_error "TCP SYN Flood Detector is not installed."
+        print_info "Install it first: https://github.com/Hetti219/TCP-SYN-Flood-Detector"
+        exit 1
+    fi
+}
+
+# Check if a command exists
+command_exists() {
+    command -v "$1" &> /dev/null
+}
+
+# Get the ipset name from config or use default
+get_ipset_name() {
+    if [[ -f "$CONFIG_PATH" ]]; then
+        local name
+        name=$(grep -oP 'ipset_name\s*=\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null || echo "")
+        if [[ -n "$name" ]]; then
+            echo "$name"
+            return
+        fi
+    fi
+    echo "$DEFAULT_IPSET_NAME"
+}
+
+# Get metrics socket path from config or use default
+get_metrics_socket() {
+    if [[ -f "$CONFIG_PATH" ]]; then
+        local socket
+        socket=$(grep -oP 'metrics_socket\s*=\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null || echo "")
+        if [[ -n "$socket" ]]; then
+            echo "$socket"
+            return
+        fi
+    fi
+    echo "$METRICS_SOCKET"
+}
+
+# Format uptime from seconds
+format_uptime() {
+    local seconds=$1
+    local days=$((seconds / 86400))
+    local hours=$(((seconds % 86400) / 3600))
+    local minutes=$(((seconds % 3600) / 60))
+
+    if [[ $days -gt 0 ]]; then
+        echo "${days}d ${hours}h ${minutes}m"
+    elif [[ $hours -gt 0 ]]; then
+        echo "${hours}h ${minutes}m"
+    else
+        echo "${minutes}m"
+    fi
+}
+
+# Format large numbers with commas
+format_number() {
+    printf "%'d" "$1" 2>/dev/null || echo "$1"
+}
+
+# Validate IP address format
+validate_ip() {
+    local ip=$1
+    if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# =============================================================================
+# Service Management Commands
+# =============================================================================
+
+cmd_start() {
+    require_root
+    check_installed
+
+    print_info "Starting TCP SYN Flood Detector..."
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_warning "Service is already running."
+        return 0
+    fi
+
+    if systemctl start "$SERVICE_NAME"; then
+        sleep 1
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_success "Service started successfully."
+        else
+            print_error "Service failed to start. Check logs with: $PROGRAM_NAME logs"
+            exit 1
+        fi
+    else
+        print_error "Failed to start service."
+        exit 1
+    fi
+}
+
+cmd_stop() {
+    require_root
+    check_installed
+
+    print_info "Stopping TCP SYN Flood Detector..."
+
+    if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_warning "Service is not running."
+        return 0
+    fi
+
+    if systemctl stop "$SERVICE_NAME"; then
+        print_success "Service stopped successfully."
+    else
+        print_error "Failed to stop service."
+        exit 1
+    fi
+}
+
+cmd_restart() {
+    require_root
+    check_installed
+
+    print_info "Restarting TCP SYN Flood Detector..."
+
+    if systemctl restart "$SERVICE_NAME"; then
+        sleep 1
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_success "Service restarted successfully."
+        else
+            print_error "Service failed to restart. Check logs with: $PROGRAM_NAME logs"
+            exit 1
+        fi
+    else
+        print_error "Failed to restart service."
+        exit 1
+    fi
+}
+
+cmd_reload() {
+    require_root
+    check_installed
+
+    print_info "Reloading configuration..."
+
+    if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_error "Service is not running. Start it first with: $PROGRAM_NAME start"
+        exit 1
+    fi
+
+    if systemctl reload "$SERVICE_NAME"; then
+        print_success "Configuration reloaded successfully."
+        print_dim "  The service re-read the config file and whitelist without restarting."
+    else
+        print_error "Failed to reload configuration."
+        exit 1
+    fi
+}
+
+cmd_enable() {
+    require_root
+    check_installed
+
+    print_info "Enabling TCP SYN Flood Detector to start on boot..."
+
+    if systemctl enable "$SERVICE_NAME"; then
+        print_success "Service enabled. It will start automatically on boot."
+    else
+        print_error "Failed to enable service."
+        exit 1
+    fi
+}
+
+cmd_disable() {
+    require_root
+    check_installed
+
+    print_info "Disabling TCP SYN Flood Detector from starting on boot..."
+
+    if systemctl disable "$SERVICE_NAME"; then
+        print_success "Service disabled. It will no longer start automatically."
+    else
+        print_error "Failed to disable service."
+        exit 1
+    fi
+}
+
+# =============================================================================
+# Status and Monitoring Commands
+# =============================================================================
+
+cmd_status() {
+    check_installed
+
+    local socket
+    socket=$(get_metrics_socket)
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    echo ""
+    print_header "TCP SYN Flood Detector Status"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # Service Status
+    local status_color
+    local status_text
+    local status_icon
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        status_color="$GREEN"
+        status_text="Running"
+        status_icon="●"
+
+        # Get uptime
+        local start_time
+        start_time=$(systemctl show "$SERVICE_NAME" --property=ActiveEnterTimestamp --value 2>/dev/null || echo "")
+        if [[ -n "$start_time" && "$start_time" != "n/a" ]]; then
+            local start_epoch
+            start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
+            local now_epoch
+            now_epoch=$(date +%s)
+            local uptime_seconds=$((now_epoch - start_epoch))
+            local uptime_str
+            uptime_str=$(format_uptime "$uptime_seconds")
+            echo -e "  Status:     ${status_color}${status_icon} ${status_text}${NC} (uptime: ${uptime_str})"
+        else
+            echo -e "  Status:     ${status_color}${status_icon} ${status_text}${NC}"
+        fi
+    else
+        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+            status_color="$YELLOW"
+            status_text="Stopped"
+            status_icon="○"
+        else
+            status_color="$RED"
+            status_text="Disabled"
+            status_icon="○"
+        fi
+        echo -e "  Status:     ${status_color}${status_icon} ${status_text}${NC}"
+    fi
+
+    # Auto-start status
+    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+        echo -e "  Auto-start: ${GREEN}Enabled${NC}"
+    else
+        echo -e "  Auto-start: ${DIM}Disabled${NC}"
+    fi
+
+    # Version
+    if [[ -x "$BINARY_PATH" ]]; then
+        local version
+        version=$("$BINARY_PATH" --version 2>/dev/null | head -1 || echo "Unknown")
+        echo -e "  Version:    ${version}"
+    fi
+
+    echo ""
+
+    # Try to get metrics if service is running
+    if systemctl is-active --quiet "$SERVICE_NAME" && [[ -S "$socket" ]]; then
+        print_header "Traffic Statistics"
+        echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+        local metrics
+        if command_exists socat; then
+            metrics=$(echo "GET /metrics" | timeout 2 socat - "UNIX:$socket" 2>/dev/null || echo "")
+        elif command_exists nc; then
+            metrics=$(echo "GET /metrics" | timeout 2 nc -U "$socket" 2>/dev/null || echo "")
+        else
+            metrics=""
+        fi
+
+        if [[ -n "$metrics" ]]; then
+            # Parse metrics
+            local packets_total syn_packets blocked_ips detections whitelist_hits tracker_entries
+            packets_total=$(echo "$metrics" | grep "^synflood_packets_total " | awk '{print $2}' | cut -d. -f1)
+            syn_packets=$(echo "$metrics" | grep "^synflood_syn_packets_total " | awk '{print $2}' | cut -d. -f1)
+            blocked_ips=$(echo "$metrics" | grep "^synflood_blocked_ips_current " | awk '{print $2}' | cut -d. -f1)
+            detections=$(echo "$metrics" | grep "^synflood_detections_total " | awk '{print $2}' | cut -d. -f1)
+            whitelist_hits=$(echo "$metrics" | grep "^synflood_whitelist_hits_total " | awk '{print $2}' | cut -d. -f1)
+            tracker_entries=$(echo "$metrics" | grep "^synflood_tracker_entries " | awk '{print $2}' | cut -d. -f1)
+
+            # Display traffic stats
+            if [[ -n "$packets_total" ]]; then
+                echo -e "  Total packets processed:  $(format_number "${packets_total:-0}")"
+            fi
+            if [[ -n "$syn_packets" ]]; then
+                echo -e "  SYN packets analyzed:     $(format_number "${syn_packets:-0}")"
+                if [[ -n "$packets_total" && "$packets_total" -gt 0 ]]; then
+                    local syn_pct=$((syn_packets * 100 / packets_total))
+                    echo -e "  SYN packet ratio:         ${syn_pct}%"
+                fi
+            fi
+
+            echo ""
+            print_header "Detection Summary"
+            echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+            # Blocked IPs with color coding
+            local blocked_color="$GREEN"
+            if [[ "${blocked_ips:-0}" -gt 0 ]]; then
+                blocked_color="$YELLOW"
+            fi
+            if [[ "${blocked_ips:-0}" -gt 10 ]]; then
+                blocked_color="$RED"
+            fi
+            echo -e "  Currently blocked IPs:    ${blocked_color}${blocked_ips:-0}${NC}"
+            echo -e "  Total attacks detected:   ${detections:-0}"
+            echo -e "  Whitelist matches:        ${whitelist_hits:-0}"
+            echo -e "  IPs being tracked:        ${tracker_entries:-0}"
+        else
+            print_warning "Could not retrieve metrics. Ensure socat or nc is installed."
+        fi
+    elif ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_dim "  Service is not running. Start it to see traffic statistics."
+    fi
+
+    echo ""
+
+    # Configuration summary
+    print_header "Current Configuration"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    if [[ -f "$CONFIG_PATH" ]]; then
+        local threshold window block_duration
+        threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "100")
+        window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "1000")
+        block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "300")
+
+        echo -e "  Detection threshold:      ${threshold} SYN packets per ${window}ms window"
+        echo -e "  Block duration:           ${block_duration} seconds"
+        echo -e "  Config file:              ${CONFIG_PATH}"
+    else
+        print_warning "Configuration file not found at ${CONFIG_PATH}"
+    fi
+
+    # Whitelist summary
+    if [[ -f "$WHITELIST_PATH" ]]; then
+        local whitelist_count
+        whitelist_count=$(grep -cvE '^\s*#|^\s*$' "$WHITELIST_PATH" 2>/dev/null || echo "0")
+        echo -e "  Whitelist entries:        ${whitelist_count}"
+    else
+        echo -e "  Whitelist entries:        ${DIM}0 (file not found)${NC}"
+    fi
+
+    echo ""
+
+    # Quick health indicators
+    print_header "Health"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    local health_ok=true
+
+    # Check ipset
+    if command_exists ipset && ipset list "$ipset_name" &>/dev/null; then
+        print_success "Firewall rules configured (ipset: $ipset_name)"
+    else
+        print_warning "ipset '$ipset_name' not found (may be created on service start)"
+        health_ok=false
+    fi
+
+    # Check iptables rules
+    if command_exists iptables && sudo iptables -L INPUT -n 2>/dev/null | grep -q "$ipset_name"; then
+        print_success "iptables DROP rule active"
+    else
+        print_warning "iptables DROP rule not found (may be created on service start)"
+    fi
+
+    # Check metrics socket
+    if [[ -S "$socket" ]]; then
+        print_success "Metrics socket available"
+    elif systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_warning "Metrics socket not found at $socket"
+        health_ok=false
+    fi
+
+    echo ""
+}
+
+cmd_metrics() {
+    check_installed
+
+    local socket
+    socket=$(get_metrics_socket)
+    local format="${1:-}"
+
+    if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_error "Service is not running. Start it first with: $PROGRAM_NAME start"
+        exit 1
+    fi
+
+    if [[ ! -S "$socket" ]]; then
+        print_error "Metrics socket not found at $socket"
+        exit 1
+    fi
+
+    local metrics
+    if command_exists socat; then
+        metrics=$(echo "GET /metrics" | timeout 5 socat - "UNIX:$socket" 2>/dev/null)
+    elif command_exists nc; then
+        metrics=$(echo "GET /metrics" | timeout 5 nc -U "$socket" 2>/dev/null)
+    else
+        print_error "Neither socat nor nc (netcat) is installed."
+        print_info "Install one of them: sudo apt install socat"
+        exit 1
+    fi
+
+    if [[ -z "$metrics" ]]; then
+        print_error "Failed to retrieve metrics from socket."
+        exit 1
+    fi
+
+    if [[ "$format" == "--raw" || "$format" == "-r" ]]; then
+        echo "$metrics"
+    else
+        print_header "Prometheus Metrics"
+        echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo "$metrics" | while IFS=' ' read -r name value; do
+            if [[ -n "$name" && ! "$name" =~ ^# ]]; then
+                printf "  ${CYAN}%-35s${NC} %s\n" "$name" "$value"
+            fi
+        done
+        echo ""
+        print_dim "Use '$PROGRAM_NAME metrics --raw' for Prometheus-compatible output"
+    fi
+}
+
+cmd_health() {
+    require_root
+    check_installed
+
+    print_header "System Health Check"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    local all_ok=true
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    # Check 1: Binary exists
+    echo -e "${BOLD}Binary Installation${NC}"
+    if [[ -x "$BINARY_PATH" ]]; then
+        print_success "synflood-detector binary found at $BINARY_PATH"
+    else
+        print_error "synflood-detector binary not found or not executable"
+        all_ok=false
+    fi
+
+    # Check 2: Config file
+    echo ""
+    echo -e "${BOLD}Configuration${NC}"
+    if [[ -f "$CONFIG_PATH" ]]; then
+        print_success "Config file found at $CONFIG_PATH"
+
+        # Validate config syntax (basic check)
+        if "$BINARY_PATH" -c "$CONFIG_PATH" --help &>/dev/null; then
+            print_success "Config file syntax appears valid"
+        fi
+    else
+        print_error "Config file not found at $CONFIG_PATH"
+        all_ok=false
+    fi
+
+    if [[ -f "$WHITELIST_PATH" ]]; then
+        print_success "Whitelist file found at $WHITELIST_PATH"
+    else
+        print_warning "Whitelist file not found (will use empty whitelist)"
+    fi
+
+    # Check 3: Systemd service
+    echo ""
+    echo -e "${BOLD}Service Status${NC}"
+    if systemctl list-unit-files "$SERVICE_NAME.service" &>/dev/null; then
+        print_success "Systemd service unit installed"
+    else
+        print_error "Systemd service unit not found"
+        all_ok=false
+    fi
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_success "Service is running"
+    else
+        print_warning "Service is not running"
+    fi
+
+    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
+        print_success "Service is enabled for auto-start"
+    else
+        print_warning "Service is not enabled for auto-start"
+    fi
+
+    # Check 4: Dependencies
+    echo ""
+    echo -e "${BOLD}Dependencies${NC}"
+
+    local deps=("iptables" "ipset")
+    for dep in "${deps[@]}"; do
+        if command_exists "$dep"; then
+            print_success "$dep is installed"
+        else
+            print_error "$dep is not installed"
+            all_ok=false
+        fi
+    done
+
+    # Check for socat or nc (for metrics)
+    if command_exists socat; then
+        print_success "socat is installed (for metrics access)"
+    elif command_exists nc; then
+        print_success "nc (netcat) is installed (for metrics access)"
+    else
+        print_warning "Neither socat nor nc installed (metrics access limited)"
+    fi
+
+    # Check 5: Firewall rules
+    echo ""
+    echo -e "${BOLD}Firewall Rules${NC}"
+
+    if ipset list "$ipset_name" &>/dev/null; then
+        print_success "ipset '$ipset_name' exists"
+        local ipset_count
+        ipset_count=$(ipset list "$ipset_name" 2>/dev/null | grep -c "^[0-9]" || echo "0")
+        print_info "  Contains $ipset_count entries"
+    else
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_warning "ipset '$ipset_name' not found (service may recreate on restart)"
+        else
+            print_info "ipset '$ipset_name' not found (will be created when service starts)"
+        fi
+    fi
+
+    if iptables -L INPUT -n 2>/dev/null | grep -q "$ipset_name"; then
+        print_success "iptables DROP rule for $ipset_name is active"
+    else
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_warning "iptables DROP rule not found"
+        else
+            print_info "iptables rule not found (will be created when service starts)"
+        fi
+    fi
+
+    # Check 6: Capabilities
+    echo ""
+    echo -e "${BOLD}Capabilities${NC}"
+    local caps
+    caps=$(getcap "$BINARY_PATH" 2>/dev/null || echo "")
+    if [[ -n "$caps" ]]; then
+        print_success "Binary has capabilities set: $caps"
+    else
+        print_info "No file capabilities set (service uses ambient capabilities via systemd)"
+    fi
+
+    # Check 7: Metrics socket
+    echo ""
+    echo -e "${BOLD}Metrics Socket${NC}"
+    local socket
+    socket=$(get_metrics_socket)
+    if [[ -S "$socket" ]]; then
+        print_success "Metrics socket exists at $socket"
+        if command_exists socat || command_exists nc; then
+            local test_result
+            if command_exists socat; then
+                test_result=$(echo "GET /metrics" | timeout 2 socat - "UNIX:$socket" 2>/dev/null | head -1 || echo "")
+            else
+                test_result=$(echo "GET /metrics" | timeout 2 nc -U "$socket" 2>/dev/null | head -1 || echo "")
+            fi
+            if [[ -n "$test_result" ]]; then
+                print_success "Metrics socket is responding"
+            else
+                print_warning "Metrics socket not responding"
+            fi
+        fi
+    else
+        if systemctl is-active --quiet "$SERVICE_NAME"; then
+            print_warning "Metrics socket not found at $socket"
+        else
+            print_info "Metrics socket not found (will be created when service starts)"
+        fi
+    fi
+
+    # Summary
+    echo ""
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    if [[ "$all_ok" == true ]]; then
+        print_success "All critical checks passed"
+    else
+        print_error "Some checks failed. Review the issues above."
+        exit 1
+    fi
+    echo ""
+}
+
+# =============================================================================
+# Configuration Commands
+# =============================================================================
+
+cmd_config() {
+    local subcmd="${1:-show}"
+    shift || true
+
+    case "$subcmd" in
+        show)
+            cmd_config_show "$@"
+            ;;
+        validate)
+            cmd_config_validate "$@"
+            ;;
+        edit)
+            cmd_config_edit "$@"
+            ;;
+        get)
+            cmd_config_get "$@"
+            ;;
+        set)
+            cmd_config_set "$@"
+            ;;
+        path)
+            echo "$CONFIG_PATH"
+            ;;
+        *)
+            print_error "Unknown config command: $subcmd"
+            echo ""
+            echo "Available commands:"
+            echo "  show      - Display current configuration"
+            echo "  validate  - Validate configuration file syntax"
+            echo "  edit      - Open configuration in editor"
+            echo "  get KEY   - Get a specific configuration value"
+            echo "  set KEY VALUE - Set a configuration value"
+            echo "  path      - Print configuration file path"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_config_show() {
+    check_installed
+
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        print_error "Configuration file not found at $CONFIG_PATH"
+        exit 1
+    fi
+
+    print_header "Current Configuration"
+    echo -e "${DIM}File: $CONFIG_PATH${NC}"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    # Detection settings
+    echo -e "${BOLD}Detection Settings${NC}"
+    local threshold window proc_interval
+    threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "100")
+    window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "1000")
+    proc_interval=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "5")
+
+    echo -e "  syn_threshold          = ${CYAN}${threshold}${NC}"
+    echo -e "  ${DIM}(SYN packets from single IP to trigger detection)${NC}"
+    echo -e "  window_ms              = ${CYAN}${window}${NC}"
+    echo -e "  ${DIM}(Time window for counting SYN packets)${NC}"
+    echo -e "  proc_check_interval_s  = ${CYAN}${proc_interval}${NC}"
+    echo -e "  ${DIM}(Interval for /proc validation check)${NC}"
+    echo ""
+
+    # Enforcement settings
+    echo -e "${BOLD}Enforcement Settings${NC}"
+    local block_duration ipset_name
+    block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "300")
+    ipset_name=$(grep -oP 'ipset_name\s*=\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null || echo "synflood_blacklist")
+
+    echo -e "  block_duration_s       = ${CYAN}${block_duration}${NC}"
+    echo -e "  ${DIM}(How long IPs stay blocked, in seconds)${NC}"
+    echo -e "  ipset_name             = ${CYAN}${ipset_name}${NC}"
+    echo -e "  ${DIM}(Name of the ipset used for blocking)${NC}"
+    echo ""
+
+    # Limits
+    echo -e "${BOLD}Resource Limits${NC}"
+    local max_tracked hash_buckets
+    max_tracked=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "10000")
+    hash_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "4096")
+
+    echo -e "  max_tracked_ips        = ${CYAN}${max_tracked}${NC}"
+    echo -e "  hash_buckets           = ${CYAN}${hash_buckets}${NC}"
+    echo ""
+
+    # Capture settings
+    echo -e "${BOLD}Capture Settings${NC}"
+    local nfqueue_num use_raw
+    nfqueue_num=$(grep -oP 'nfqueue_num\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "0")
+    use_raw=$(grep -oP 'use_raw_socket\s*=\s*\K(true|false)' "$CONFIG_PATH" 2>/dev/null || echo "false")
+
+    echo -e "  nfqueue_num            = ${CYAN}${nfqueue_num}${NC}"
+    echo -e "  use_raw_socket         = ${CYAN}${use_raw}${NC}"
+    echo ""
+
+    # Logging settings
+    echo -e "${BOLD}Logging Settings${NC}"
+    local log_level use_syslog metrics_socket
+    log_level=$(grep -oP 'level\s*=\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null || echo "info")
+    use_syslog=$(grep -oP 'syslog\s*=\s*\K(true|false)' "$CONFIG_PATH" 2>/dev/null || echo "true")
+    metrics_socket=$(grep -oP 'metrics_socket\s*=\s*"\K[^"]+' "$CONFIG_PATH" 2>/dev/null || echo "/var/run/synflood-detector.sock")
+
+    echo -e "  level                  = ${CYAN}${log_level}${NC}"
+    echo -e "  syslog                 = ${CYAN}${use_syslog}${NC}"
+    echo -e "  metrics_socket         = ${CYAN}${metrics_socket}${NC}"
+    echo ""
+}
+
+cmd_config_validate() {
+    check_installed
+
+    local config_file="${1:-$CONFIG_PATH}"
+
+    if [[ ! -f "$config_file" ]]; then
+        print_error "Configuration file not found: $config_file"
+        exit 1
+    fi
+
+    print_info "Validating configuration file: $config_file"
+    echo ""
+
+    local errors=0
+    local warnings=0
+
+    # Check file readability
+    if [[ ! -r "$config_file" ]]; then
+        print_error "Configuration file is not readable"
+        exit 1
+    fi
+
+    # Basic syntax checks using grep patterns
+    # Check for required sections
+    local sections=("detection" "enforcement" "limits" "capture" "whitelist" "logging")
+    for section in "${sections[@]}"; do
+        if grep -q "^[[:space:]]*${section}[[:space:]]*=" "$config_file"; then
+            print_success "Section '$section' found"
+        else
+            print_warning "Section '$section' not found (defaults will be used)"
+            ((warnings++))
+        fi
+    done
+
+    echo ""
+
+    # Validate specific values
+    print_info "Checking parameter values..."
+
+    # syn_threshold
+    local threshold
+    threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$threshold" ]]; then
+        if [[ "$threshold" -lt 1 || "$threshold" -gt 1000000 ]]; then
+            print_error "syn_threshold ($threshold) out of range (1-1000000)"
+            ((errors++))
+        elif [[ "$threshold" -lt 50 ]]; then
+            print_warning "syn_threshold ($threshold) is very low - may cause false positives"
+            ((warnings++))
+        elif [[ "$threshold" -gt 500 ]]; then
+            print_warning "syn_threshold ($threshold) is high - may miss attacks"
+            ((warnings++))
+        else
+            print_success "syn_threshold ($threshold) is within recommended range"
+        fi
+    fi
+
+    # window_ms
+    local window
+    window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$window" ]]; then
+        if [[ "$window" -lt 1 || "$window" -gt 60000 ]]; then
+            print_error "window_ms ($window) out of range (1-60000)"
+            ((errors++))
+        else
+            print_success "window_ms ($window) is valid"
+        fi
+    fi
+
+    # block_duration_s
+    local duration
+    duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$duration" ]]; then
+        if [[ "$duration" -lt 1 || "$duration" -gt 86400 ]]; then
+            print_error "block_duration_s ($duration) out of range (1-86400)"
+            ((errors++))
+        else
+            print_success "block_duration_s ($duration) is valid"
+        fi
+    fi
+
+    # Check hash_buckets is power of 2
+    local buckets
+    buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$buckets" ]]; then
+        if (( (buckets & (buckets - 1)) != 0 )); then
+            print_warning "hash_buckets ($buckets) should be a power of 2"
+            ((warnings++))
+        else
+            print_success "hash_buckets ($buckets) is valid (power of 2)"
+        fi
+    fi
+
+    # Check log level
+    local level
+    level=$(grep -oP 'level\s*=\s*"\K[^"]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$level" ]]; then
+        case "$level" in
+            debug|info|warn|error)
+                print_success "Log level '$level' is valid"
+                ;;
+            *)
+                print_error "Invalid log level '$level' (must be: debug, info, warn, error)"
+                ((errors++))
+                ;;
+        esac
+    fi
+
+    # Check whitelist file exists
+    local whitelist_file
+    whitelist_file=$(grep -oP 'file\s*=\s*"\K[^"]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$whitelist_file" ]]; then
+        if [[ -f "$whitelist_file" ]]; then
+            print_success "Whitelist file exists: $whitelist_file"
+        else
+            print_warning "Whitelist file not found: $whitelist_file"
+            ((warnings++))
+        fi
+    fi
+
+    echo ""
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    if [[ $errors -gt 0 ]]; then
+        print_error "Validation failed with $errors error(s) and $warnings warning(s)"
+        exit 1
+    elif [[ $warnings -gt 0 ]]; then
+        print_warning "Validation passed with $warnings warning(s)"
+        exit 0
+    else
+        print_success "Validation passed - configuration is valid"
+        exit 0
+    fi
+}
+
+cmd_config_edit() {
+    require_root
+    check_installed
+
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        print_error "Configuration file not found at $CONFIG_PATH"
+        exit 1
+    fi
+
+    local editor="${EDITOR:-${VISUAL:-nano}}"
+
+    if ! command_exists "$editor"; then
+        editor="vi"
+    fi
+
+    print_info "Opening configuration in $editor..."
+    print_dim "After editing, run '$PROGRAM_NAME config validate' to check your changes"
+    print_dim "Then run '$PROGRAM_NAME reload' to apply changes without restart"
+    echo ""
+
+    "$editor" "$CONFIG_PATH"
+}
+
+cmd_config_get() {
+    check_installed
+
+    local key="${1:-}"
+
+    if [[ -z "$key" ]]; then
+        print_error "Usage: $PROGRAM_NAME config get <key>"
+        echo ""
+        echo "Available keys:"
+        echo "  syn_threshold, window_ms, proc_check_interval_s"
+        echo "  block_duration_s, ipset_name"
+        echo "  max_tracked_ips, hash_buckets"
+        echo "  nfqueue_num, use_raw_socket"
+        echo "  level, syslog, metrics_socket"
+        exit 1
+    fi
+
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        print_error "Configuration file not found at $CONFIG_PATH"
+        exit 1
+    fi
+
+    local value
+    case "$key" in
+        ipset_name|metrics_socket|level)
+            value=$(grep -oP "${key}\s*=\s*\"\K[^\"]+\" " "$CONFIG_PATH" 2>/dev/null || echo "")
+            ;;
+        *)
+            value=$(grep -oP "${key}\s*=\s*\K[^;]+" "$CONFIG_PATH" 2>/dev/null | tr -d ' ' || echo "")
+            ;;
+    esac
+
+    if [[ -n "$value" ]]; then
+        echo "$value"
+    else
+        print_error "Key '$key' not found in configuration"
+        exit 1
+    fi
+}
+
+cmd_config_set() {
+    require_root
+    check_installed
+
+    local key="${1:-}"
+    local value="${2:-}"
+
+    if [[ -z "$key" || -z "$value" ]]; then
+        print_error "Usage: $PROGRAM_NAME config set <key> <value>"
+        exit 1
+    fi
+
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        print_error "Configuration file not found at $CONFIG_PATH"
+        exit 1
+    fi
+
+    # Create backup
+    cp "$CONFIG_PATH" "${CONFIG_PATH}.bak"
+    print_info "Backup created at ${CONFIG_PATH}.bak"
+
+    # Determine if value needs quotes
+    local needs_quotes=false
+    case "$key" in
+        ipset_name|metrics_socket|level|file)
+            needs_quotes=true
+            ;;
+    esac
+
+    # Update the value
+    if [[ "$needs_quotes" == true ]]; then
+        if sed -i "s|\(${key}[[:space:]]*=[[:space:]]*\)\"[^\"]*\"|\1\"${value}\"|" "$CONFIG_PATH"; then
+            print_success "Updated $key = \"$value\""
+        else
+            print_error "Failed to update configuration"
+            mv "${CONFIG_PATH}.bak" "$CONFIG_PATH"
+            exit 1
+        fi
+    else
+        if sed -i "s|\(${key}[[:space:]]*=[[:space:]]*\)[^;]*|\1${value}|" "$CONFIG_PATH"; then
+            print_success "Updated $key = $value"
+        else
+            print_error "Failed to update configuration"
+            mv "${CONFIG_PATH}.bak" "$CONFIG_PATH"
+            exit 1
+        fi
+    fi
+
+    print_info "Run '$PROGRAM_NAME reload' to apply changes"
+}
+
+# =============================================================================
+# Blocked IP Commands
+# =============================================================================
+
+cmd_blocked() {
+    local subcmd="${1:-list}"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_blocked_list "$@"
+            ;;
+        add)
+            cmd_blocked_add "$@"
+            ;;
+        remove|rm|del)
+            cmd_blocked_remove "$@"
+            ;;
+        flush|clear)
+            cmd_blocked_flush "$@"
+            ;;
+        test|check)
+            cmd_blocked_test "$@"
+            ;;
+        count)
+            cmd_blocked_count "$@"
+            ;;
+        *)
+            print_error "Unknown blocked command: $subcmd"
+            echo ""
+            echo "Available commands:"
+            echo "  list              - List all blocked IPs"
+            echo "  add <ip> [timeout] - Block an IP address"
+            echo "  remove <ip>       - Unblock an IP address"
+            echo "  flush             - Remove all blocked IPs"
+            echo "  test <ip>         - Check if an IP is blocked"
+            echo "  count             - Show number of blocked IPs"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_blocked_list() {
+    require_root
+
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    if ! ipset list "$ipset_name" &>/dev/null; then
+        print_warning "ipset '$ipset_name' does not exist."
+        print_info "It will be created when the service starts."
+        exit 0
+    fi
+
+    local entries
+    entries=$(ipset list "$ipset_name" 2>/dev/null | tail -n +9)
+
+    if [[ -z "$entries" ]]; then
+        print_info "No IPs are currently blocked."
+        exit 0
+    fi
+
+    print_header "Blocked IP Addresses"
+    echo -e "${DIM}ipset: $ipset_name${NC}"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    local count=0
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            # Parse IP and timeout
+            local ip timeout_str
+            ip=$(echo "$line" | awk '{print $1}')
+            timeout_str=$(echo "$line" | grep -oP 'timeout \K[0-9]+' || echo "")
+
+            if [[ -n "$timeout_str" ]]; then
+                echo -e "  ${RED}●${NC} ${ip}  ${DIM}(expires in ${timeout_str}s)${NC}"
+            else
+                echo -e "  ${RED}●${NC} ${ip}"
+            fi
+            ((count++))
+        fi
+    done <<< "$entries"
+
+    echo ""
+    echo -e "${DIM}Total: $count blocked IP(s)${NC}"
+}
+
+cmd_blocked_add() {
+    require_root
+
+    local ip="${1:-}"
+    local timeout="${2:-}"
+
+    if [[ -z "$ip" ]]; then
+        print_error "Usage: $PROGRAM_NAME blocked add <ip> [timeout_seconds]"
+        exit 1
+    fi
+
+    if ! validate_ip "$ip"; then
+        print_error "Invalid IP address format: $ip"
+        exit 1
+    fi
+
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    if ! ipset list "$ipset_name" &>/dev/null; then
+        print_error "ipset '$ipset_name' does not exist. Start the service first."
+        exit 1
+    fi
+
+    local cmd="ipset add -exist $ipset_name $ip"
+    if [[ -n "$timeout" ]]; then
+        cmd="$cmd timeout $timeout"
+    fi
+
+    if eval "$cmd"; then
+        if [[ -n "$timeout" ]]; then
+            print_success "Blocked $ip for $timeout seconds"
+        else
+            print_success "Blocked $ip (using default timeout)"
+        fi
+    else
+        print_error "Failed to block $ip"
+        exit 1
+    fi
+}
+
+cmd_blocked_remove() {
+    require_root
+
+    local ip="${1:-}"
+
+    if [[ -z "$ip" ]]; then
+        print_error "Usage: $PROGRAM_NAME blocked remove <ip>"
+        exit 1
+    fi
+
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    if ! ipset list "$ipset_name" &>/dev/null; then
+        print_error "ipset '$ipset_name' does not exist."
+        exit 1
+    fi
+
+    if ipset del -exist "$ipset_name" "$ip"; then
+        print_success "Unblocked $ip"
+    else
+        print_error "Failed to unblock $ip"
+        exit 1
+    fi
+}
+
+cmd_blocked_flush() {
+    require_root
+
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    if ! ipset list "$ipset_name" &>/dev/null; then
+        print_warning "ipset '$ipset_name' does not exist."
+        exit 0
+    fi
+
+    local count
+    count=$(ipset list "$ipset_name" 2>/dev/null | grep -c "^[0-9]" || echo "0")
+
+    if [[ "$count" -eq 0 ]]; then
+        print_info "No IPs to remove - blocklist is already empty."
+        exit 0
+    fi
+
+    echo -e "${YELLOW}Warning: This will unblock all $count IP(s).${NC}"
+    read -p "Are you sure? (y/N) " -n 1 -r
+    echo ""
+
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        if ipset flush "$ipset_name"; then
+            print_success "Removed all $count blocked IP(s)"
+        else
+            print_error "Failed to flush blocklist"
+            exit 1
+        fi
+    else
+        print_info "Operation cancelled"
+    fi
+}
+
+cmd_blocked_test() {
+    require_root
+
+    local ip="${1:-}"
+
+    if [[ -z "$ip" ]]; then
+        print_error "Usage: $PROGRAM_NAME blocked test <ip>"
+        exit 1
+    fi
+
+    if ! validate_ip "$ip"; then
+        print_error "Invalid IP address format: $ip"
+        exit 1
+    fi
+
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    if ! ipset list "$ipset_name" &>/dev/null; then
+        print_info "$ip is NOT blocked (ipset does not exist)"
+        exit 1
+    fi
+
+    if ipset test "$ipset_name" "$ip" &>/dev/null; then
+        print_warning "$ip IS blocked"
+        exit 0
+    else
+        print_success "$ip is NOT blocked"
+        exit 1
+    fi
+}
+
+cmd_blocked_count() {
+    require_root
+
+    local ipset_name
+    ipset_name=$(get_ipset_name)
+
+    if ! ipset list "$ipset_name" &>/dev/null; then
+        echo "0"
+        exit 0
+    fi
+
+    local count
+    count=$(ipset list "$ipset_name" 2>/dev/null | grep -c "^[0-9]" || echo "0")
+    echo "$count"
+}
+
+# =============================================================================
+# Whitelist Commands
+# =============================================================================
+
+cmd_whitelist() {
+    local subcmd="${1:-list}"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_whitelist_list "$@"
+            ;;
+        add)
+            cmd_whitelist_add "$@"
+            ;;
+        remove|rm|del)
+            cmd_whitelist_remove "$@"
+            ;;
+        reload)
+            cmd_whitelist_reload "$@"
+            ;;
+        edit)
+            cmd_whitelist_edit "$@"
+            ;;
+        path)
+            echo "$WHITELIST_PATH"
+            ;;
+        *)
+            print_error "Unknown whitelist command: $subcmd"
+            echo ""
+            echo "Available commands:"
+            echo "  list          - List all whitelisted IPs"
+            echo "  add <ip>      - Add an IP to the whitelist"
+            echo "  remove <ip>   - Remove an IP from the whitelist"
+            echo "  reload        - Reload whitelist from file"
+            echo "  edit          - Open whitelist in editor"
+            echo "  path          - Print whitelist file path"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_whitelist_list() {
+    if [[ ! -f "$WHITELIST_PATH" ]]; then
+        print_warning "Whitelist file not found at $WHITELIST_PATH"
+        exit 0
+    fi
+
+    local entries
+    entries=$(grep -vE '^\s*#|^\s*$' "$WHITELIST_PATH" 2>/dev/null || true)
+
+    if [[ -z "$entries" ]]; then
+        print_info "Whitelist is empty."
+        print_dim "Add entries with: $PROGRAM_NAME whitelist add <ip>"
+        exit 0
+    fi
+
+    print_header "Whitelisted IP Addresses"
+    echo -e "${DIM}File: $WHITELIST_PATH${NC}"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    local count=0
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            echo -e "  ${GREEN}●${NC} ${line}"
+            ((count++))
+        fi
+    done <<< "$entries"
+
+    echo ""
+    echo -e "${DIM}Total: $count whitelisted entry/entries${NC}"
+}
+
+cmd_whitelist_add() {
+    require_root
+
+    local ip="${1:-}"
+
+    if [[ -z "$ip" ]]; then
+        print_error "Usage: $PROGRAM_NAME whitelist add <ip or cidr>"
+        echo ""
+        echo "Examples:"
+        echo "  $PROGRAM_NAME whitelist add 192.168.1.100"
+        echo "  $PROGRAM_NAME whitelist add 10.0.0.0/8"
+        exit 1
+    fi
+
+    if ! validate_ip "$ip"; then
+        print_error "Invalid IP/CIDR format: $ip"
+        exit 1
+    fi
+
+    # Create whitelist file if it doesn't exist
+    if [[ ! -f "$WHITELIST_PATH" ]]; then
+        mkdir -p "$(dirname "$WHITELIST_PATH")"
+        cat > "$WHITELIST_PATH" << 'EOF'
+# TCP SYN Flood Detector - Whitelist Configuration
+# Add one IP address or CIDR range per line
+# Lines starting with # are comments
+
+EOF
+        print_info "Created whitelist file at $WHITELIST_PATH"
+    fi
+
+    # Check if already exists
+    if grep -qxF "$ip" "$WHITELIST_PATH" 2>/dev/null; then
+        print_warning "$ip is already in the whitelist"
+        exit 0
+    fi
+
+    # Add to file
+    echo "$ip" >> "$WHITELIST_PATH"
+    print_success "Added $ip to whitelist"
+
+    # Suggest reload
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_info "Run '$PROGRAM_NAME reload' to apply changes"
+    fi
+}
+
+cmd_whitelist_remove() {
+    require_root
+
+    local ip="${1:-}"
+
+    if [[ -z "$ip" ]]; then
+        print_error "Usage: $PROGRAM_NAME whitelist remove <ip>"
+        exit 1
+    fi
+
+    if [[ ! -f "$WHITELIST_PATH" ]]; then
+        print_error "Whitelist file not found"
+        exit 1
+    fi
+
+    if ! grep -qxF "$ip" "$WHITELIST_PATH" 2>/dev/null; then
+        print_warning "$ip is not in the whitelist"
+        exit 0
+    fi
+
+    # Remove the line
+    local temp_file
+    temp_file=$(mktemp)
+    grep -vxF "$ip" "$WHITELIST_PATH" > "$temp_file" || true
+    mv "$temp_file" "$WHITELIST_PATH"
+
+    print_success "Removed $ip from whitelist"
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_info "Run '$PROGRAM_NAME reload' to apply changes"
+    fi
+}
+
+cmd_whitelist_reload() {
+    require_root
+
+    if ! systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_error "Service is not running. Start it first."
+        exit 1
+    fi
+
+    cmd_reload
+}
+
+cmd_whitelist_edit() {
+    require_root
+
+    if [[ ! -f "$WHITELIST_PATH" ]]; then
+        mkdir -p "$(dirname "$WHITELIST_PATH")"
+        cat > "$WHITELIST_PATH" << 'EOF'
+# TCP SYN Flood Detector - Whitelist Configuration
+# Add one IP address or CIDR range per line
+# Lines starting with # are comments
+
+# Example entries:
+# 192.168.1.100
+# 10.0.0.0/8
+# 172.16.0.0/12
+
+EOF
+        print_info "Created whitelist file at $WHITELIST_PATH"
+    fi
+
+    local editor="${EDITOR:-${VISUAL:-nano}}"
+
+    if ! command_exists "$editor"; then
+        editor="vi"
+    fi
+
+    print_info "Opening whitelist in $editor..."
+    "$editor" "$WHITELIST_PATH"
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        print_info "Run '$PROGRAM_NAME reload' to apply changes"
+    fi
+}
+
+# =============================================================================
+# Log Commands
+# =============================================================================
+
+cmd_logs() {
+    local subcmd="${1:-}"
+
+    case "$subcmd" in
+        -f|--follow|follow)
+            cmd_logs_follow
+            ;;
+        search|grep)
+            shift
+            cmd_logs_search "$@"
+            ;;
+        -n|--lines)
+            shift
+            cmd_logs_recent "$@"
+            ;;
+        events)
+            cmd_logs_events
+            ;;
+        ""|recent)
+            cmd_logs_recent 50
+            ;;
+        *)
+            # If it's a number, show that many lines
+            if [[ "$subcmd" =~ ^[0-9]+$ ]]; then
+                cmd_logs_recent "$subcmd"
+            else
+                print_error "Unknown logs command: $subcmd"
+                echo ""
+                echo "Available commands:"
+                echo "  logs              - Show recent logs (last 50 lines)"
+                echo "  logs -f           - Follow logs in real-time"
+                echo "  logs -n <count>   - Show last N log lines"
+                echo "  logs events       - Show detection events only"
+                echo "  logs search <pattern> - Search logs for pattern"
+                exit 1
+            fi
+            ;;
+    esac
+}
+
+cmd_logs_recent() {
+    local count="${1:-50}"
+
+    print_header "Recent Logs"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    journalctl -u "$SERVICE_NAME" -n "$count" --no-pager --output=short-iso 2>/dev/null || \
+        print_error "Failed to retrieve logs. Is journald running?"
+}
+
+cmd_logs_follow() {
+    print_header "Following Logs (Ctrl+C to stop)"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    journalctl -u "$SERVICE_NAME" -f --output=short-iso 2>/dev/null || \
+        print_error "Failed to follow logs. Is journald running?"
+}
+
+cmd_logs_search() {
+    local pattern="${1:-}"
+
+    if [[ -z "$pattern" ]]; then
+        print_error "Usage: $PROGRAM_NAME logs search <pattern>"
+        exit 1
+    fi
+
+    print_header "Log Search: $pattern"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    journalctl -u "$SERVICE_NAME" --no-pager --output=short-iso 2>/dev/null | \
+        grep -i --color=auto "$pattern" || \
+        print_info "No matches found for: $pattern"
+}
+
+cmd_logs_events() {
+    print_header "Detection Events"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # Search for detection-related log entries
+    journalctl -u "$SERVICE_NAME" --no-pager --output=short-iso 2>/dev/null | \
+        grep -iE "(blocked|detected|suspicious|unblocked|attack)" | \
+        tail -100 || \
+        print_info "No detection events found"
+}
+
+# =============================================================================
+# Preset Commands
+# =============================================================================
+
+# Built-in presets (used when preset files aren't installed)
+declare -A PRESET_DESCRIPTIONS=(
+    ["conservative"]="Low false positives, suitable for learning/testing"
+    ["balanced"]="Good balance between protection and false positives"
+    ["aggressive"]="Maximum protection, may have more false positives"
+    ["high-traffic"]="For high-traffic servers with many legitimate connections"
+)
+
+declare -A PRESET_THRESHOLDS=(
+    ["conservative"]=200
+    ["balanced"]=100
+    ["aggressive"]=50
+    ["high-traffic"]=500
+)
+
+declare -A PRESET_BLOCK_DURATIONS=(
+    ["conservative"]=120
+    ["balanced"]=300
+    ["aggressive"]=600
+    ["high-traffic"]=180
+)
+
+declare -A PRESET_PROC_INTERVALS=(
+    ["conservative"]=10
+    ["balanced"]=5
+    ["aggressive"]=3
+    ["high-traffic"]=5
+)
+
+declare -A PRESET_MAX_TRACKED=(
+    ["conservative"]=10000
+    ["balanced"]=10000
+    ["aggressive"]=10000
+    ["high-traffic"]=50000
+)
+
+declare -A PRESET_HASH_BUCKETS=(
+    ["conservative"]=4096
+    ["balanced"]=4096
+    ["aggressive"]=4096
+    ["high-traffic"]=16384
+)
+
+# Get list of available presets (built-in + custom from presets directory)
+get_available_presets() {
+    local presets=("conservative" "balanced" "aggressive" "high-traffic")
+
+    # Add custom presets from presets directory
+    if [[ -d "$PRESETS_DIR" ]]; then
+        for preset_file in "$PRESETS_DIR"/*.conf; do
+            if [[ -f "$preset_file" ]]; then
+                local preset_name
+                preset_name=$(basename "$preset_file" .conf)
+                # Skip if it's a built-in preset
+                if [[ ! " ${presets[*]} " =~ " ${preset_name} " ]]; then
+                    presets+=("$preset_name")
+                fi
+            fi
+        done
+    fi
+
+    echo "${presets[@]}"
+}
+
+# Check if preset exists (built-in or file)
+preset_exists() {
+    local name="$1"
+
+    # Check built-in presets
+    if [[ -n "${PRESET_THRESHOLDS[$name]:-}" ]]; then
+        return 0
+    fi
+
+    # Check preset file
+    if [[ -f "$PRESETS_DIR/${name}.conf" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Get preset file path (returns empty if using built-in)
+get_preset_file() {
+    local name="$1"
+
+    if [[ -f "$PRESETS_DIR/${name}.conf" ]]; then
+        echo "$PRESETS_DIR/${name}.conf"
+    fi
+}
+
+cmd_preset() {
+    local subcmd="${1:-list}"
+    shift || true
+
+    case "$subcmd" in
+        list|ls)
+            cmd_preset_list
+            ;;
+        show)
+            cmd_preset_show "$@"
+            ;;
+        apply)
+            cmd_preset_apply "$@"
+            ;;
+        diff)
+            cmd_preset_diff "$@"
+            ;;
+        *)
+            print_error "Unknown preset command: $subcmd"
+            echo ""
+            echo "Available commands:"
+            echo "  list              - List available presets"
+            echo "  show <name>       - Show preset details"
+            echo "  apply <name>      - Apply a preset configuration"
+            echo "  diff <name>       - Compare preset with current config"
+            exit 1
+            ;;
+    esac
+}
+
+cmd_preset_list() {
+    print_header "Available Configuration Presets"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    # Show built-in presets
+    echo -e "${BOLD}Built-in Presets${NC}"
+    echo ""
+
+    echo -e "  ${CYAN}conservative${NC}"
+    echo -e "    ${DIM}Low false positives, suitable for learning/testing${NC}"
+    echo -e "    Threshold: 200 SYN/sec, Block: 2m"
+    echo ""
+
+    echo -e "  ${CYAN}balanced${NC} ${GREEN}(recommended)${NC}"
+    echo -e "    ${DIM}Good balance between protection and false positives${NC}"
+    echo -e "    Threshold: 100 SYN/sec, Block: 5m"
+    echo ""
+
+    echo -e "  ${CYAN}aggressive${NC}"
+    echo -e "    ${DIM}Maximum protection, may have more false positives${NC}"
+    echo -e "    Threshold: 50 SYN/sec, Block: 10m"
+    echo ""
+
+    echo -e "  ${CYAN}high-traffic${NC}"
+    echo -e "    ${DIM}For high-traffic servers with many legitimate connections${NC}"
+    echo -e "    Threshold: 500 SYN/sec, Block: 3m"
+    echo ""
+
+    # Show custom presets if any
+    if [[ -d "$PRESETS_DIR" ]]; then
+        local custom_found=false
+        for preset_file in "$PRESETS_DIR"/*.conf; do
+            if [[ -f "$preset_file" ]]; then
+                local preset_name
+                preset_name=$(basename "$preset_file" .conf)
+                # Skip built-in presets
+                if [[ "$preset_name" != "conservative" && "$preset_name" != "balanced" && \
+                      "$preset_name" != "aggressive" && "$preset_name" != "high-traffic" ]]; then
+                    if [[ "$custom_found" == false ]]; then
+                        echo -e "${BOLD}Custom Presets${NC} ${DIM}(in $PRESETS_DIR)${NC}"
+                        echo ""
+                        custom_found=true
+                    fi
+                    echo -e "  ${MAGENTA}${preset_name}${NC}"
+                    # Try to extract description from file
+                    local desc
+                    desc=$(grep -m1 "^# .*Preset$" "$preset_file" 2>/dev/null | sed 's/^# //' || echo "Custom preset")
+                    echo -e "    ${DIM}${desc}${NC}"
+                    echo ""
+                fi
+            fi
+        done
+    fi
+
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+    echo "Commands:"
+    echo "  $PROGRAM_NAME preset show <name>   - View preset details"
+    echo "  $PROGRAM_NAME preset apply <name>  - Apply a preset"
+    echo "  $PROGRAM_NAME preset diff <name>   - Compare with current config"
+    echo ""
+
+    if [[ -d "$PRESETS_DIR" ]]; then
+        print_dim "Preset files location: $PRESETS_DIR"
+    fi
+}
+
+cmd_preset_show() {
+    local name="${1:-}"
+    local show_file="${2:-}"
+
+    if [[ -z "$name" ]]; then
+        print_error "Usage: $PROGRAM_NAME preset show <name> [--file]"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
+        exit 1
+    fi
+
+    if ! preset_exists "$name"; then
+        print_error "Unknown preset: $name"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
+        exit 1
+    fi
+
+    local preset_file
+    preset_file=$(get_preset_file "$name")
+
+    print_header "Preset: $name"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # If --file flag or preset file exists and user wants to see it
+    if [[ "$show_file" == "--file" || "$show_file" == "-f" ]] && [[ -f "$preset_file" ]]; then
+        echo ""
+        echo -e "${DIM}File: $preset_file${NC}"
+        echo ""
+        cat "$preset_file"
+        return
+    fi
+
+    # Show preset summary
+    if [[ -f "$preset_file" ]]; then
+        echo -e "${DIM}Source: $preset_file${NC}"
+        echo ""
+
+        # Extract key values from file
+        local threshold window block_duration proc_interval max_tracked hash_buckets
+        threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        proc_interval=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        max_tracked=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+        hash_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null || echo "?")
+
+        # Extract description from comments
+        local desc
+        desc=$(grep -m1 "^# USE THIS PRESET WHEN:" -A1 "$preset_file" 2>/dev/null | tail -1 | sed 's/^#\s*//' || echo "")
+        if [[ -n "$desc" ]]; then
+            echo "Description: ${PRESET_DESCRIPTIONS[$name]:-Custom preset}"
+        fi
+    else
+        echo -e "${DIM}Source: Built-in${NC}"
+        echo ""
+        echo "Description: ${PRESET_DESCRIPTIONS[$name]}"
+
+        local threshold="${PRESET_THRESHOLDS[$name]}"
+        local block_duration="${PRESET_BLOCK_DURATIONS[$name]}"
+        local proc_interval="${PRESET_PROC_INTERVALS[$name]}"
+        local max_tracked="${PRESET_MAX_TRACKED[$name]}"
+        local hash_buckets="${PRESET_HASH_BUCKETS[$name]}"
+    fi
+
+    echo ""
+    echo -e "${BOLD}Detection Settings${NC}"
+    echo "  syn_threshold         = $threshold SYN packets/window"
+    echo "  window_ms             = ${window:-1000} ms"
+    echo "  proc_check_interval_s = $proc_interval seconds"
+    echo ""
+    echo -e "${BOLD}Enforcement Settings${NC}"
+    echo "  block_duration_s      = $block_duration seconds ($(format_duration "$block_duration"))"
+    echo ""
+    echo -e "${BOLD}Resource Limits${NC}"
+    echo "  max_tracked_ips       = $(format_number "$max_tracked")"
+    echo "  hash_buckets          = $(format_number "$hash_buckets")"
+    echo ""
+
+    # Show use cases
+    case "$name" in
+        conservative)
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • New installations and testing"
+            echo "  • Low-traffic servers"
+            echo "  • When false positives are unacceptable"
+            ;;
+        balanced)
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • Most production servers"
+            echo "  • General-purpose web servers"
+            echo "  • Default recommendation for most users"
+            ;;
+        aggressive)
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • High-security environments"
+            echo "  • Servers under active attack"
+            echo "  • When you have a good whitelist"
+            ;;
+        high-traffic)
+            echo -e "${BOLD}Best For${NC}"
+            echo "  • High-traffic web servers"
+            echo "  • Load balancers and CDN edges"
+            echo "  • Services with 10,000+ concurrent users"
+            ;;
+    esac
+
+    echo ""
+    print_dim "Use '$PROGRAM_NAME preset show $name --file' to view full config file"
+}
+
+# Helper to format duration
+format_duration() {
+    local seconds=$1
+    if [[ $seconds -ge 3600 ]]; then
+        echo "$((seconds / 3600))h $((seconds % 3600 / 60))m"
+    elif [[ $seconds -ge 60 ]]; then
+        echo "$((seconds / 60))m"
+    else
+        echo "${seconds}s"
+    fi
+}
+
+cmd_preset_diff() {
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        print_error "Usage: $PROGRAM_NAME preset diff <name>"
+        exit 1
+    fi
+
+    if ! preset_exists "$name"; then
+        print_error "Unknown preset: $name"
+        exit 1
+    fi
+
+    if [[ ! -f "$CONFIG_PATH" ]]; then
+        print_error "Current config file not found: $CONFIG_PATH"
+        exit 1
+    fi
+
+    print_header "Comparing '$name' preset with current config"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo ""
+
+    # Get preset values
+    local preset_file
+    preset_file=$(get_preset_file "$name")
+
+    local p_threshold p_window p_block p_proc p_max p_buckets
+    if [[ -f "$preset_file" ]]; then
+        p_threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_block=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_proc=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_max=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+        p_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$preset_file" 2>/dev/null)
+    else
+        p_threshold="${PRESET_THRESHOLDS[$name]}"
+        p_window=1000
+        p_block="${PRESET_BLOCK_DURATIONS[$name]}"
+        p_proc="${PRESET_PROC_INTERVALS[$name]}"
+        p_max="${PRESET_MAX_TRACKED[$name]}"
+        p_buckets="${PRESET_HASH_BUCKETS[$name]}"
+    fi
+
+    # Get current values
+    local c_threshold c_window c_block c_proc c_max c_buckets
+    c_threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_block=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_proc=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_max=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+    c_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null)
+
+    # Compare and display
+    printf "%-25s %-15s %-15s %s\n" "Parameter" "Current" "Preset" "Change"
+    printf "%-25s %-15s %-15s %s\n" "─────────────────────────" "───────────────" "───────────────" "──────"
+
+    compare_value "syn_threshold" "$c_threshold" "$p_threshold"
+    compare_value "window_ms" "$c_window" "$p_window"
+    compare_value "block_duration_s" "$c_block" "$p_block"
+    compare_value "proc_check_interval_s" "$c_proc" "$p_proc"
+    compare_value "max_tracked_ips" "$c_max" "$p_max"
+    compare_value "hash_buckets" "$c_buckets" "$p_buckets"
+
+    echo ""
+    print_dim "Apply this preset with: $PROGRAM_NAME preset apply $name"
+}
+
+compare_value() {
+    local param="$1"
+    local current="$2"
+    local preset="$3"
+
+    local change=""
+    local color=""
+
+    if [[ "$current" == "$preset" ]]; then
+        change="(no change)"
+        color="$DIM"
+    elif [[ "$current" -lt "$preset" ]]; then
+        change="↑ increase"
+        color="$YELLOW"
+    else
+        change="↓ decrease"
+        color="$CYAN"
+    fi
+
+    printf "%-25s %-15s %-15s ${color}%s${NC}\n" "$param" "$current" "$preset" "$change"
+}
+
+cmd_preset_apply() {
+    require_root
+    check_installed
+
+    local name="${1:-}"
+
+    if [[ -z "$name" ]]; then
+        print_error "Usage: $PROGRAM_NAME preset apply <name>"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
+        exit 1
+    fi
+
+    if ! preset_exists "$name"; then
+        print_error "Unknown preset: $name"
+        echo ""
+        echo "Available presets: $(get_available_presets | tr ' ' ', ')"
+        exit 1
+    fi
+
+    local preset_file
+    preset_file=$(get_preset_file "$name")
+
+    print_info "Applying '$name' preset..."
+
+    # Backup current config
+    if [[ -f "$CONFIG_PATH" ]]; then
+        local backup_path="${CONFIG_PATH}.bak.$(date +%Y%m%d_%H%M%S)"
+        cp "$CONFIG_PATH" "$backup_path"
+        print_success "Backed up current configuration to:"
+        print_dim "  $backup_path"
+    fi
+
+    # If preset file exists, copy it directly
+    if [[ -f "$preset_file" ]]; then
+        print_info "Using preset file: $preset_file"
+
+        if cp "$preset_file" "$CONFIG_PATH"; then
+            print_success "Applied '$name' preset from file"
+        else
+            print_error "Failed to copy preset file"
+            exit 1
+        fi
+    else
+        # Use built-in values and sed
+        local threshold="${PRESET_THRESHOLDS[$name]}"
+        local window=1000
+        local block_duration="${PRESET_BLOCK_DURATIONS[$name]}"
+        local proc_interval="${PRESET_PROC_INTERVALS[$name]}"
+        local max_tracked="${PRESET_MAX_TRACKED[$name]}"
+        local hash_buckets="${PRESET_HASH_BUCKETS[$name]}"
+
+        local errors=0
+
+        sed -i "s|\(syn_threshold[[:space:]]*=[[:space:]]*\)[0-9]*|\1${threshold}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(window_ms[[:space:]]*=[[:space:]]*\)[0-9]*|\1${window}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(block_duration_s[[:space:]]*=[[:space:]]*\)[0-9]*|\1${block_duration}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(proc_check_interval_s[[:space:]]*=[[:space:]]*\)[0-9]*|\1${proc_interval}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(max_tracked_ips[[:space:]]*=[[:space:]]*\)[0-9]*|\1${max_tracked}|" "$CONFIG_PATH" || ((errors++))
+        sed -i "s|\(hash_buckets[[:space:]]*=[[:space:]]*\)[0-9]*|\1${hash_buckets}|" "$CONFIG_PATH" || ((errors++))
+
+        if [[ $errors -gt 0 ]]; then
+            print_error "Some settings failed to apply"
+            exit 1
+        fi
+
+        print_success "Applied '$name' preset (built-in)"
+    fi
+
+    # Show what was applied
+    echo ""
+    echo -e "${BOLD}New Configuration${NC}"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    local threshold window block_duration proc_interval max_tracked hash_buckets
+    threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    proc_interval=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    max_tracked=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+    hash_buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "?")
+
+    echo "  syn_threshold         = $threshold"
+    echo "  window_ms             = $window"
+    echo "  block_duration_s      = $block_duration ($(format_duration "$block_duration"))"
+    echo "  proc_check_interval_s = $proc_interval"
+    echo "  max_tracked_ips       = $max_tracked"
+    echo "  hash_buckets          = $hash_buckets"
+    echo ""
+
+    if systemctl is-active --quiet "$SERVICE_NAME"; then
+        read -p "Reload service to apply changes? (Y/n) " -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+            cmd_reload
+        else
+            print_info "Run '$PROGRAM_NAME reload' to apply changes later"
+        fi
+    else
+        print_info "Start the service with '$PROGRAM_NAME start' to use new settings"
+    fi
+}
+
+# =============================================================================
+# Help and Version
+# =============================================================================
+
+cmd_version() {
+    echo "$PROGRAM_NAME version $VERSION"
+
+    if [[ -x "$BINARY_PATH" ]]; then
+        echo ""
+        "$BINARY_PATH" --version 2>/dev/null || true
+    fi
+}
+
+cmd_help() {
+    cat << EOF
+${BOLD}$PROGRAM_NAME${NC} - TCP SYN Flood Detector Management Tool
+
+${BOLD}USAGE${NC}
+    $PROGRAM_NAME <command> [options]
+
+${BOLD}SERVICE COMMANDS${NC}
+    start               Start the detector service
+    stop                Stop the detector service
+    restart             Restart the detector service
+    reload              Reload configuration without restart
+    enable              Enable auto-start on boot
+    disable             Disable auto-start on boot
+
+${BOLD}STATUS & MONITORING${NC}
+    status              Show service status and statistics
+    metrics [--raw]     Show Prometheus metrics
+    health              Run system health checks
+
+${BOLD}CONFIGURATION${NC}
+    config show         Display current configuration
+    config validate     Validate configuration file
+    config edit         Open configuration in editor
+    config get <key>    Get a configuration value
+    config set <key> <value>  Set a configuration value
+
+${BOLD}BLOCKED IPs${NC}
+    blocked list        List all blocked IPs
+    blocked add <ip> [timeout]  Manually block an IP
+    blocked remove <ip> Unblock an IP
+    blocked flush       Remove all blocked IPs
+    blocked test <ip>   Check if an IP is blocked
+    blocked count       Show count of blocked IPs
+
+${BOLD}WHITELIST${NC}
+    whitelist list      List whitelisted IPs
+    whitelist add <ip>  Add IP to whitelist
+    whitelist remove <ip>  Remove IP from whitelist
+    whitelist edit      Open whitelist in editor
+    whitelist reload    Reload whitelist (same as 'reload')
+
+${BOLD}LOGS${NC}
+    logs                Show recent logs (last 50 lines)
+    logs -f             Follow logs in real-time
+    logs -n <count>     Show last N log lines
+    logs events         Show detection events only
+    logs search <pattern>  Search logs
+
+${BOLD}PRESETS${NC}
+    preset list         List available configuration presets
+    preset show <name>  Show preset details
+    preset apply <name> Apply a preset configuration
+
+${BOLD}OTHER${NC}
+    version             Show version information
+    help                Show this help message
+
+${BOLD}EXAMPLES${NC}
+    $PROGRAM_NAME status                    # Check overall status
+    $PROGRAM_NAME preset apply balanced     # Apply balanced preset
+    $PROGRAM_NAME blocked add 192.168.1.50  # Block an IP manually
+    $PROGRAM_NAME whitelist add 10.0.0.0/8  # Whitelist a CIDR range
+    $PROGRAM_NAME logs -f                   # Follow logs in real-time
+    $PROGRAM_NAME config validate           # Validate configuration
+
+${BOLD}DOCUMENTATION${NC}
+    https://github.com/Hetti219/TCP-SYN-Flood-Detector
+
+EOF
+}
+
+# =============================================================================
+# Main Entry Point
+# =============================================================================
+
+main() {
+    local command="${1:-help}"
+    shift || true
+
+    case "$command" in
+        # Service commands
+        start)
+            cmd_start "$@"
+            ;;
+        stop)
+            cmd_stop "$@"
+            ;;
+        restart)
+            cmd_restart "$@"
+            ;;
+        reload)
+            cmd_reload "$@"
+            ;;
+        enable)
+            cmd_enable "$@"
+            ;;
+        disable)
+            cmd_disable "$@"
+            ;;
+
+        # Status and monitoring
+        status)
+            cmd_status "$@"
+            ;;
+        metrics)
+            cmd_metrics "$@"
+            ;;
+        health)
+            cmd_health "$@"
+            ;;
+
+        # Configuration
+        config|cfg)
+            cmd_config "$@"
+            ;;
+
+        # Blocked IPs
+        blocked|block|ban)
+            cmd_blocked "$@"
+            ;;
+
+        # Whitelist
+        whitelist|wl|allow)
+            cmd_whitelist "$@"
+            ;;
+
+        # Logs
+        logs|log)
+            cmd_logs "$@"
+            ;;
+
+        # Presets
+        preset|presets)
+            cmd_preset "$@"
+            ;;
+
+        # Help and version
+        version|--version|-v)
+            cmd_version
+            ;;
+        help|--help|-h)
+            cmd_help
+            ;;
+
+        *)
+            print_error "Unknown command: $command"
+            echo ""
+            echo "Run '$PROGRAM_NAME help' for usage information."
+            exit 1
+            ;;
+    esac
+}
+
+main "$@"
