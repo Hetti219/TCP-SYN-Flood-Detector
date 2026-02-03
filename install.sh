@@ -518,21 +518,45 @@ prompt_whitelist_ips() {
     fi
 
     echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Whitelist Configuration"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
     echo "The whitelist prevents legitimate IPs from being blocked."
-    echo "Current whitelist location: ${SYSCONF_DIR}/whitelist.conf"
+    echo ""
+    echo "Common IPs to whitelist:"
+    echo "  • Your own IP (office, home, VPN)"
+    echo "  • Load balancer IPs"
+    echo "  • Monitoring services (Pingdom, UptimeRobot)"
+    echo "  • CI/CD runners (GitHub Actions, Jenkins)"
+    echo "  • CDN edge servers (Cloudflare, Fastly)"
+    echo "  • Payment webhooks (Stripe, PayPal)"
+    echo ""
+    echo "Templates and examples available at:"
+    echo "  ${SYSCONF_DIR}/whitelist.conf"
+    echo "  ${DOC_DIR}/WHITELIST_TEMPLATES.md"
     echo ""
 
     if prompt_yes_no "Add IPs to whitelist now? [y/N]:" "n"; then
         configure_whitelist
     else
-        info "You can edit the whitelist later: ${SYSCONF_DIR}/whitelist.conf"
+        info "You can configure the whitelist later using:"
+        echo "    sudo synflood-ctl whitelist add <ip>"
+        echo "    sudo synflood-ctl whitelist edit"
+        echo ""
+        info "See templates: cat ${SYSCONF_DIR}/whitelist.conf"
     fi
 }
 
 configure_whitelist() {
     echo ""
     echo "Enter IP addresses or CIDR ranges to whitelist (one per line)."
-    echo "Examples: 192.168.1.100 or 10.0.0.0/8"
+    echo ""
+    echo "Examples:"
+    echo "  Single IP:       203.0.113.50"
+    echo "  CIDR range:      10.0.0.0/24"
+    echo "  Your current IP: $(curl -s ifconfig.me 2>/dev/null || echo "Unable to detect")"
+    echo ""
     echo "Press Ctrl+D when done."
     echo ""
 
@@ -549,10 +573,14 @@ configure_whitelist() {
     done
 
     if [[ -s "$tmpfile" ]]; then
+        echo "" >> "${SYSCONF_DIR}/whitelist.conf"
+        echo "# Added during installation - $(date '+%Y-%m-%d %H:%M:%S')" >> "${SYSCONF_DIR}/whitelist.conf"
         cat "$tmpfile" >> "${SYSCONF_DIR}/whitelist.conf"
         local count
         count=$(wc -l < "$tmpfile")
         success "Added ${count} entries to whitelist"
+        echo ""
+        info "Review comprehensive templates: cat ${SYSCONF_DIR}/whitelist.conf"
     fi
 
     rm -f "$tmpfile"

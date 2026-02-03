@@ -677,6 +677,193 @@ cmd_health() {
     echo ""
 }
 
+cmd_validate() {
+    check_installed
+
+    local config_file="${1:-$CONFIG_PATH}"
+    local errors=0
+    local warnings=0
+
+    # Check if config file exists
+    if [[ ! -f "$config_file" ]]; then
+        print_error "Configuration file not found: $config_file"
+        exit 1
+    fi
+
+    # Check file readability
+    if [[ ! -r "$config_file" ]]; then
+        print_error "Configuration file is not readable"
+        exit 1
+    fi
+
+    # Syntax check - verify all required sections exist
+    local sections=("detection" "enforcement" "limits" "capture" "whitelist" "logging")
+    local missing_sections=0
+    for section in "${sections[@]}"; do
+        if ! grep -q "^[[:space:]]*${section}[[:space:]]*=" "$config_file"; then
+            ((missing_sections++))
+        fi
+    done
+
+    if [[ $missing_sections -eq 0 ]]; then
+        print_success "Syntax valid"
+    else
+        print_error "Syntax errors: $missing_sections required section(s) missing"
+        ((errors++))
+    fi
+
+    # Extract values for validation
+    local threshold window duration proc_interval max_tracked buckets
+    threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "100")
+    window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "1000")
+    duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "300")
+    proc_interval=$(grep -oP 'proc_check_interval_s\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "5")
+    max_tracked=$(grep -oP 'max_tracked_ips\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "10000")
+    buckets=$(grep -oP 'hash_buckets\s*=\s*\K[0-9]+' "$config_file" 2>/dev/null || echo "4096")
+
+    # Validate syn_threshold
+    if [[ "$threshold" -lt 1 || "$threshold" -gt 1000000 ]]; then
+        print_error "syn_threshold ($threshold) out of valid range (1-1000000)"
+        ((errors++))
+    elif [[ "$threshold" -lt 50 ]]; then
+        print_warning "syn_threshold ($threshold) is very low - high risk of false positives"
+        ((warnings++))
+    elif [[ "$threshold" -gt 500 ]]; then
+        print_warning "syn_threshold ($threshold) is high - may miss attacks"
+        ((warnings++))
+    elif [[ "$threshold" -ge 50 && "$threshold" -le 200 ]]; then
+        print_success "syn_threshold ($threshold) is within recommended range"
+    else
+        print_success "syn_threshold ($threshold) is acceptable"
+    fi
+
+    # Validate window_ms
+    if [[ "$window" -lt 100 || "$window" -gt 60000 ]]; then
+        print_error "window_ms ($window) out of valid range (100-60000)"
+        ((errors++))
+    elif [[ "$window" -eq 1000 ]]; then
+        print_success "window_ms ($window) is optimal"
+    else
+        print_success "window_ms ($window) is valid"
+    fi
+
+    # Validate block_duration_s
+    if [[ "$duration" -lt 60 || "$duration" -gt 86400 ]]; then
+        print_warning "block_duration_s ($duration) outside recommended range (60-86400)"
+        ((warnings++))
+    else
+        print_success "block_duration_s ($duration) is valid"
+    fi
+
+    # Validate hash_buckets is power of 2
+    if (( (buckets & (buckets - 1)) != 0 )); then
+        print_error "hash_buckets ($buckets) must be a power of 2"
+        ((errors++))
+    else
+        # Check if hash_buckets matches max_tracked_ips recommendation
+        local recommended_min=$((max_tracked / 4))
+        local recommended_max=$((max_tracked / 2))
+
+        if [[ "$buckets" -lt "$recommended_min" ]]; then
+            print_warning "hash_buckets ($buckets) is low for max_tracked_ips ($max_tracked)"
+            echo -e "  ${DIM}Recommend: $recommended_min - $recommended_max${NC}"
+            ((warnings++))
+        elif [[ "$buckets" -gt "$((max_tracked * 2))" ]]; then
+            print_warning "hash_buckets ($buckets) is unnecessarily high for max_tracked_ips ($max_tracked)"
+            echo -e "  ${DIM}Recommend: $recommended_min - $recommended_max${NC}"
+            ((warnings++))
+        else
+            print_success "hash_buckets ($buckets) matches max_tracked_ips recommendation"
+        fi
+    fi
+
+    # Validate max_tracked_ips
+    if [[ "$max_tracked" -lt 1000 || "$max_tracked" -gt 1000000 ]]; then
+        print_warning "max_tracked_ips ($max_tracked) outside typical range (1000-1000000)"
+        ((warnings++))
+    fi
+
+    # Check log level
+    local level
+    level=$(grep -oP 'level\s*=\s*"\K[^"]+' "$config_file" 2>/dev/null || echo "")
+    if [[ -n "$level" ]]; then
+        case "$level" in
+            debug|info|warn|error)
+                print_success "Log level '$level' is valid"
+                ;;
+            *)
+                print_error "Invalid log level '$level' (must be: debug, info, warn, error)"
+                ((errors++))
+                ;;
+        esac
+    fi
+
+    # Check whitelist file
+    local whitelist_file
+    whitelist_file=$(grep -oP 'file\s*=\s*"\K[^"]+' "$config_file" 2>/dev/null || echo "$WHITELIST_PATH")
+
+    if [[ -f "$whitelist_file" ]]; then
+        local whitelist_count
+        whitelist_count=$(grep -cvE '^\s*#|^\s*$' "$whitelist_file" 2>/dev/null || echo "0")
+
+        if [[ "$whitelist_count" -eq 0 ]]; then
+            print_warning "whitelist.conf is empty (consider adding trusted IPs)"
+            ((warnings++))
+        elif [[ "$whitelist_count" -le 2 ]]; then
+            # Likely just localhost
+            print_warning "whitelist.conf has minimal entries ($whitelist_count)"
+            echo -e "  ${DIM}Consider adding: your IP, load balancers, monitoring services${NC}"
+            ((warnings++))
+        else
+            print_success "Whitelist configured ($whitelist_count entries)"
+        fi
+    else
+        print_error "Whitelist file not found: $whitelist_file"
+        ((errors++))
+    fi
+
+    # Check metrics socket path
+    local metrics_socket
+    metrics_socket=$(grep -oP 'metrics_socket\s*=\s*"\K[^"]+' "$config_file" 2>/dev/null || echo "$METRICS_SOCKET")
+    local socket_dir
+    socket_dir=$(dirname "$metrics_socket")
+
+    if [[ ! -d "$socket_dir" ]]; then
+        print_warning "Metrics socket directory doesn't exist: $socket_dir"
+        echo -e "  ${DIM}Will be created when service starts${NC}"
+        ((warnings++))
+    fi
+
+    # Check ipset name format
+    local ipset_name
+    ipset_name=$(grep -oP 'ipset_name\s*=\s*"\K[^"]+' "$config_file" 2>/dev/null || echo "synflood_blacklist")
+    if [[ ! "$ipset_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        print_error "ipset_name contains invalid characters: $ipset_name"
+        ((errors++))
+    fi
+
+    # Summary
+    echo ""
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    if [[ $errors -gt 0 ]]; then
+        print_error "Validation failed: $errors error(s), $warnings warning(s)"
+        echo ""
+        echo "Fix errors and run: $PROGRAM_NAME validate"
+        exit 1
+    elif [[ $warnings -gt 0 ]]; then
+        print_warning "Validation passed with $warnings warning(s)"
+        echo ""
+        echo "Warnings are advisory. Apply changes with: $PROGRAM_NAME reload"
+        exit 0
+    else
+        print_success "Validation passed - configuration is ready"
+        echo ""
+        echo "Apply changes with: $PROGRAM_NAME reload"
+        exit 0
+    fi
+}
+
 # =============================================================================
 # Configuration Commands
 # =============================================================================
@@ -2103,10 +2290,11 @@ ${BOLD}STATUS & MONITORING${NC}
     status              Show service status and statistics
     metrics [--raw]     Show Prometheus metrics
     health              Run system health checks
+    validate            Validate configuration (quick check)
 
 ${BOLD}CONFIGURATION${NC}
     config show         Display current configuration
-    config validate     Validate configuration file
+    config validate     Validate configuration file (detailed)
     config edit         Open configuration in editor
     config get <key>    Get a configuration value
     config set <key> <value>  Set a configuration value
@@ -2144,11 +2332,11 @@ ${BOLD}OTHER${NC}
 
 ${BOLD}EXAMPLES${NC}
     $PROGRAM_NAME status                    # Check overall status
+    $PROGRAM_NAME validate                  # Quick config validation
     $PROGRAM_NAME preset apply balanced     # Apply balanced preset
     $PROGRAM_NAME blocked add 192.168.1.50  # Block an IP manually
     $PROGRAM_NAME whitelist add 10.0.0.0/8  # Whitelist a CIDR range
     $PROGRAM_NAME logs -f                   # Follow logs in real-time
-    $PROGRAM_NAME config validate           # Validate configuration
 
 ${BOLD}DOCUMENTATION${NC}
     https://github.com/Hetti219/TCP-SYN-Flood-Detector
@@ -2194,6 +2382,9 @@ main() {
             ;;
         health)
             cmd_health "$@"
+            ;;
+        validate)
+            cmd_validate "$@"
             ;;
 
         # Configuration
