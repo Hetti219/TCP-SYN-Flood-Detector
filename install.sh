@@ -629,6 +629,97 @@ display_status() {
     echo ""
 }
 
+# ============================================================================
+# Post-Installation Health Verification
+# ============================================================================
+
+verify_installation_health() {
+    echo ""
+    echo "Installation Health Check:"
+    echo "--------------------------"
+
+    local all_ok=true
+    local warnings=0
+
+    # Check 1: Service is running (skip if --no-service)
+    if [[ "${NO_SERVICE}" == "true" ]]; then
+        echo -e "${YELLOW}!${NC} Service not started (--no-service specified)"
+        ((warnings++))
+    elif systemctl is-active --quiet synflood-detector; then
+        echo -e "${GREEN}✓${NC} Service is running"
+    else
+        echo -e "${RED}✗${NC} Service is not running"
+        all_ok=false
+    fi
+
+    # Check 2: Firewall rules configured (ipset)
+    if ipset list synflood_blacklist &>/dev/null; then
+        echo -e "${GREEN}✓${NC} Firewall rules configured"
+    else
+        if [[ "${NO_SERVICE}" == "true" ]] || ! systemctl is-active --quiet synflood-detector; then
+            echo -e "${YELLOW}!${NC} Firewall rules pending (service not running)"
+            ((warnings++))
+        else
+            echo -e "${RED}✗${NC} Firewall rules not configured"
+            all_ok=false
+        fi
+    fi
+
+    # Check 3: NFQUEUE rule active (listening for SYN packets)
+    if iptables -L INPUT -n 2>/dev/null | grep -q "NFQUEUE"; then
+        echo -e "${GREEN}✓${NC} Listening for SYN packets"
+    else
+        if [[ "${NO_SERVICE}" == "true" ]] || ! systemctl is-active --quiet synflood-detector; then
+            echo -e "${YELLOW}!${NC} NFQUEUE rule pending (service not running)"
+            ((warnings++))
+        else
+            echo -e "${YELLOW}!${NC} NFQUEUE rule not detected"
+            ((warnings++))
+        fi
+    fi
+
+    # Check 4: Metrics endpoint accessible
+    local metrics_socket="/var/run/synflood-detector.sock"
+    if [[ -S "${metrics_socket}" ]]; then
+        echo -e "${GREEN}✓${NC} Metrics endpoint accessible"
+    else
+        if [[ "${NO_SERVICE}" == "true" ]] || ! systemctl is-active --quiet synflood-detector; then
+            echo -e "${YELLOW}!${NC} Metrics endpoint pending (service not running)"
+            ((warnings++))
+        else
+            echo -e "${YELLOW}!${NC} Metrics endpoint not found"
+            ((warnings++))
+        fi
+    fi
+
+    # Check 5: Whitelist status (advisory)
+    local whitelist_path="${SYSCONF_DIR}/whitelist.conf"
+    if [[ -f "${whitelist_path}" ]]; then
+        local whitelist_count
+        whitelist_count=$(grep -cvE '^\s*#|^\s*$' "${whitelist_path}" 2>/dev/null || echo "0")
+        if [[ "${whitelist_count}" -eq 0 ]]; then
+            echo -e "${YELLOW}!${NC} Whitelist is empty (consider adding trusted IPs)"
+            ((warnings++))
+        else
+            echo -e "${GREEN}✓${NC} Whitelist configured (${whitelist_count} entries)"
+        fi
+    else
+        echo -e "${YELLOW}!${NC} Whitelist file not found"
+        ((warnings++))
+    fi
+
+    echo ""
+
+    # Summary line
+    if [[ "${all_ok}" == "true" && ${warnings} -eq 0 ]]; then
+        success "All health checks passed"
+    elif [[ "${all_ok}" == "true" ]]; then
+        info "Health checks passed with ${warnings} advisory note(s)"
+    else
+        warn "Some health checks failed - review above for details"
+    fi
+}
+
 print_next_steps() {
     echo "Quick Start with synflood-ctl:"
     echo ""
@@ -751,6 +842,11 @@ main() {
 
     # Display final status
     display_status
+
+    # Verify installation health
+    verify_installation_health
+
+    # Show next steps
     print_next_steps
 
     success "Installation completed successfully!"
