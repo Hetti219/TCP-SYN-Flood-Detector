@@ -1,3 +1,288 @@
+# Project-specific documents
 TCP_SYN_Flood_Detector_SDD.docx
 
-/.claude
+# Claude Code assistant directory
+.claude/
+
+# =============================================================================
+# Build directories and artifacts
+# =============================================================================
+build/
+builddir/
+_build/
+.builddir/
+compile_commands.json
+.ninja_deps
+.ninja_log
+
+# Meson wrap directories
+subprojects/packagecache/
+subprojects/*/
+
+# =============================================================================
+# C/C++ compilation artifacts
+# =============================================================================
+*.o
+*.ko
+*.obj
+*.elf
+*.so
+*.so.*
+*.a
+*.lib
+*.dylib
+*.dll
+*.exe
+*.out
+*.app
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Linker output
+*.ilk
+*.map
+*.exp
+
+# =============================================================================
+# Test executables and artifacts
+# =============================================================================
+test_common
+test_config
+test_tracker
+test_tracker_advanced
+test_whitelist
+test_whitelist_advanced
+test_logger
+test_procparse
+test_detection_flow
+
+# Test output files
+/tmp/synflood_test_*
+*.test
+*.trs
+test-suite.log
+
+# Coverage reports
+*.gcda
+*.gcno
+*.gcov
+coverage/
+htmlcov/
+.coverage
+coverage.xml
+
+# =============================================================================
+# Debug files
+# =============================================================================
+*.dSYM/
+*.su
+*.idb
+*.pdb
+vgcore.*
+core
+core.*
+
+# Valgrind output
+valgrind-*.log
+*.memcheck
+
+# GDB history
+.gdb_history
+
+# =============================================================================
+# Editor and IDE files
+# =============================================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+.*.swp
+.*.swo
+Session.vim
+
+# Emacs
+\#*\#
+.\#*
+*.elc
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# JetBrains IDEs (CLion, etc.)
+.idea/
+*.iml
+*.iws
+cmake-build-*/
+
+# Eclipse
+.cproject
+.project
+.settings/
+
+# =============================================================================
+# OS-specific files
+# =============================================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Linux
+*~
+.directory
+.Trash-*
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# =============================================================================
+# Temporary and log files
+# =============================================================================
+*.log
+*.tmp
+*.temp
+*.cache
+*.pid
+*.seed
+*.pid.lock
+*.bak
+*.orig
+
+# System logs
+/var/log/
+*.journal
+
+# =============================================================================
+# Documentation artifacts
+# =============================================================================
+# Doxygen
+docs/html/
+docs/latex/
+docs/man/
+docs/xml/
+doxygen_warnings.log
+
+# Sphinx
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# Man pages (generated)
+*.1
+*.2
+*.3
+*.gz
+
+# =============================================================================
+# Package and distribution
+# =============================================================================
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.rpm
+*.deb
+*.dmg
+*.pkg
+*.snap
+
+# Installation directories
+/usr/local/
+install_manifest.txt
+
+# =============================================================================
+# Development and debugging
+# =============================================================================
+# ctags/etags
+tags
+TAGS
+.tags
+.tags_sorted_by_file
+
+# cscope
+cscope.out
+cscope.files
+cscope.in.out
+cscope.po.out
+
+# Include what you use
+*.iwyu
+
+# Sanitizer output
+*.asan
+*.tsan
+*.ubsan
+
+# Profiling
+gmon.out
+*.prof
+callgrind.out.*
+perf.data
+perf.data.old
+
+# =============================================================================
+# Project-specific ignores
+# =============================================================================
+# Configuration files (may contain sensitive data)
+# Uncomment if you don't want to commit local configs
+# /etc/synflood-detector/synflood-detector.conf
+# /etc/synflood-detector/whitelist.conf
+
+# Test data and mock files
+tests/data/
+tests/tmp/
+/tmp/synflood_*
+
+# Local development scripts
+dev/
+local/
+scratch/
+
+# Build artifacts from manual compilation
+synflood-detector
+synflood-ctl
+
+# =============================================================================
+# Dependencies and libraries
+# =============================================================================
+# If using vendored dependencies
+vendor/
+third-party/
+external/
+
+# pkg-config files (generated)
+*.pc
+
+# =============================================================================
+# Backup and version control
+# =============================================================================
+*.orig
+*.rej
+*.patch
+.git/
+.svn/
+.hg/
+
+# Merge files
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+*_BACKUP_*.txt
+*_BASE_*.txt
+*_LOCAL_*.txt
+*_REMOTE_*.txt
