@@ -277,190 +277,163 @@ cmd_disable() {
 # Status and Monitoring Commands
 # =============================================================================
 
+# Helper: Detect profile name from threshold value
+_status_detect_profile() {
+    local threshold="${1:-100}"
+    case "$threshold" in
+        200) echo "Conservative" ;;
+        100) echo "Balanced" ;;
+        50)  echo "Aggressive" ;;
+        500) echo "High-traffic" ;;
+        *)   echo "Custom" ;;
+    esac
+}
+
 cmd_status() {
     check_installed
 
-    local socket
+    local socket ipset_name version threshold profile_name
     socket=$(get_metrics_socket)
-    local ipset_name
     ipset_name=$(get_ipset_name)
 
-    echo ""
-    print_header "TCP SYN Flood Detector Status"
-    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    # Get version from binary
+    if [[ -x "$BINARY_PATH" ]]; then
+        version=$("$BINARY_PATH" --version 2>/dev/null | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' || echo "$VERSION")
+    else
+        version="$VERSION"
+    fi
 
-    # Service Status
-    local status_color
-    local status_text
-    local status_icon
+    # Get profile info from config
+    if [[ -f "$CONFIG_PATH" ]]; then
+        threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "100")
+    else
+        threshold="100"
+    fi
+    profile_name=$(_status_detect_profile "$threshold")
+
+    # === HEADER ===
+    echo ""
+    echo -e "${BOLD}${CYAN}TCP SYN Flood Detector${NC} v${version}"
+    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # === STATUS LINE ===
+    local service_running=false
+    local uptime_str=""
 
     if systemctl is-active --quiet "$SERVICE_NAME"; then
-        status_color="$GREEN"
-        status_text="Running"
-        status_icon="●"
-
-        # Get uptime
-        local start_time
+        service_running=true
+        local start_time start_epoch now_epoch uptime_seconds
         start_time=$(systemctl show "$SERVICE_NAME" --property=ActiveEnterTimestamp --value 2>/dev/null || echo "")
         if [[ -n "$start_time" && "$start_time" != "n/a" ]]; then
-            local start_epoch
             start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
-            local now_epoch
             now_epoch=$(date +%s)
-            local uptime_seconds=$((now_epoch - start_epoch))
-            local uptime_str
+            uptime_seconds=$((now_epoch - start_epoch))
             uptime_str=$(format_uptime "$uptime_seconds")
-            echo -e "  Status:     ${status_color}${status_icon} ${status_text}${NC} (uptime: ${uptime_str})"
-        else
-            echo -e "  Status:     ${status_color}${status_icon} ${status_text}${NC}"
         fi
+        echo -e "Status:     ${GREEN}● Running${NC} (${uptime_str} uptime)"
     else
-        if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-            status_color="$YELLOW"
-            status_text="Stopped"
-            status_icon="○"
-        else
-            status_color="$RED"
-            status_text="Disabled"
-            status_icon="○"
-        fi
-        echo -e "  Status:     ${status_color}${status_icon} ${status_text}${NC}"
+        echo -e "Status:     ${RED}○ Stopped${NC}"
     fi
 
-    # Auto-start status
-    if systemctl is-enabled --quiet "$SERVICE_NAME" 2>/dev/null; then
-        echo -e "  Auto-start: ${GREEN}Enabled${NC}"
-    else
-        echo -e "  Auto-start: ${DIM}Disabled${NC}"
-    fi
-
-    # Version
-    if [[ -x "$BINARY_PATH" ]]; then
-        local version
-        version=$("$BINARY_PATH" --version 2>/dev/null | head -1 || echo "Unknown")
-        echo -e "  Version:    ${version}"
-    fi
-
+    # === PROFILE LINE ===
+    echo -e "Profile:    ${CYAN}${profile_name}${NC} (threshold: ${threshold}/sec)"
     echo ""
 
-    # Try to get metrics if service is running
-    if systemctl is-active --quiet "$SERVICE_NAME" && [[ -S "$socket" ]]; then
-        print_header "Traffic Statistics"
-        echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    # === TRAFFIC SECTION (only if running) ===
+    if [[ "$service_running" == true ]]; then
+        local metrics="" packets_total syn_packets blocked_ips syn_percent
 
-        local metrics
-        if command_exists socat; then
-            metrics=$(echo "GET /metrics" | timeout 2 socat - "UNIX:$socket" 2>/dev/null || echo "")
-        elif command_exists nc; then
-            metrics=$(echo "GET /metrics" | timeout 2 nc -U "$socket" 2>/dev/null || echo "")
-        else
-            metrics=""
+        if [[ -S "$socket" ]]; then
+            if command_exists socat; then
+                metrics=$(echo "GET /metrics" | timeout 2 socat - "UNIX:$socket" 2>/dev/null || echo "")
+            elif command_exists nc; then
+                metrics=$(echo "GET /metrics" | timeout 2 nc -U "$socket" 2>/dev/null || echo "")
+            fi
         fi
 
         if [[ -n "$metrics" ]]; then
-            # Parse metrics
-            local packets_total syn_packets blocked_ips detections whitelist_hits tracker_entries
             packets_total=$(echo "$metrics" | grep "^synflood_packets_total " | awk '{print $2}' | cut -d. -f1)
             syn_packets=$(echo "$metrics" | grep "^synflood_syn_packets_total " | awk '{print $2}' | cut -d. -f1)
             blocked_ips=$(echo "$metrics" | grep "^synflood_blocked_ips_current " | awk '{print $2}' | cut -d. -f1)
-            detections=$(echo "$metrics" | grep "^synflood_detections_total " | awk '{print $2}' | cut -d. -f1)
-            whitelist_hits=$(echo "$metrics" | grep "^synflood_whitelist_hits_total " | awk '{print $2}' | cut -d. -f1)
-            tracker_entries=$(echo "$metrics" | grep "^synflood_tracker_entries " | awk '{print $2}' | cut -d. -f1)
 
-            # Display traffic stats
-            if [[ -n "$packets_total" ]]; then
-                echo -e "  Total packets processed:  $(format_number "${packets_total:-0}")"
-            fi
-            if [[ -n "$syn_packets" ]]; then
-                echo -e "  SYN packets analyzed:     $(format_number "${syn_packets:-0}")"
-                if [[ -n "$packets_total" && "$packets_total" -gt 0 ]]; then
-                    local syn_pct=$((syn_packets * 100 / packets_total))
-                    echo -e "  SYN packet ratio:         ${syn_pct}%"
-                fi
+            packets_total="${packets_total:-0}"
+            syn_packets="${syn_packets:-0}"
+            blocked_ips="${blocked_ips:-0}"
+
+            if [[ "$packets_total" -gt 0 ]]; then
+                syn_percent=$(awk "BEGIN {printf \"%.1f\", ($syn_packets / $packets_total) * 100}")
+            else
+                syn_percent="0.0"
             fi
 
+            echo -e "${BOLD}Traffic (since start):${NC}"
+            echo -e "  Total packets:    $(format_number "$packets_total")"
+            echo -e "  SYN packets:      $(format_number "$syn_packets") (${syn_percent}%)"
+            echo -e "  Blocked IPs:      ${blocked_ips} (currently active)"
             echo ""
-            print_header "Detection Summary"
-            echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-            # Blocked IPs with color coding
-            local blocked_color="$GREEN"
-            if [[ "${blocked_ips:-0}" -gt 0 ]]; then
-                blocked_color="$YELLOW"
-            fi
-            if [[ "${blocked_ips:-0}" -gt 10 ]]; then
-                blocked_color="$RED"
-            fi
-            echo -e "  Currently blocked IPs:    ${blocked_color}${blocked_ips:-0}${NC}"
-            echo -e "  Total attacks detected:   ${detections:-0}"
-            echo -e "  Whitelist matches:        ${whitelist_hits:-0}"
-            echo -e "  IPs being tracked:        ${tracker_entries:-0}"
         else
-            print_warning "Could not retrieve metrics. Ensure socat or nc is installed."
+            echo -e "${BOLD}Traffic:${NC}"
+            echo -e "  ${DIM}(metrics unavailable - install socat or nc)${NC}"
+            echo ""
         fi
-    elif ! systemctl is-active --quiet "$SERVICE_NAME"; then
-        print_dim "  Service is not running. Start it to see traffic statistics."
     fi
 
+    # === RECENT EVENTS SECTION ===
+    echo -e "${BOLD}Recent Events:${NC}"
+    local events_found=false
+
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            events_found=true
+            local time_str action ip_addr details
+
+            # Extract time (HH:MM format)
+            time_str=$(echo "$line" | grep -oP '\d{2}:\d{2}(?=:\d{2})' | head -1)
+
+            if echo "$line" | grep -qi "unblocked"; then
+                action="Unblocked"
+                ip_addr=$(echo "$line" | grep -oP 'Unblocked \K[0-9.]+' || echo "")
+                details="timeout expired"
+            elif echo "$line" | grep -qi "blocked"; then
+                action="Blocked"
+                ip_addr=$(echo "$line" | grep -oP 'Blocked \K[0-9.]+' || echo "")
+                details=$(echo "$line" | grep -oP '\([^)]+\)' | head -1 | tr -d '()' || echo "")
+            fi
+
+            if [[ -n "$time_str" && -n "$ip_addr" ]]; then
+                echo -e "  ${DIM}[${time_str}]${NC} ${action} ${ip_addr} ${DIM}(${details})${NC}"
+            fi
+        fi
+    done < <(journalctl -u "$SERVICE_NAME" --no-pager --output=short -n 50 2>/dev/null | grep -iE "(blocked|unblocked)" | tail -5)
+
+    if [[ "$events_found" == false ]]; then
+        echo -e "  ${DIM}No recent events${NC}"
+    fi
     echo ""
 
-    # Configuration summary
-    print_header "Current Configuration"
-    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    # === HEALTH SUMMARY ===
+    local health_issues=0
+    local health_msg
 
-    if [[ -f "$CONFIG_PATH" ]]; then
-        local threshold window block_duration
-        threshold=$(grep -oP 'syn_threshold\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "100")
-        window=$(grep -oP 'window_ms\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "1000")
-        block_duration=$(grep -oP 'block_duration_s\s*=\s*\K[0-9]+' "$CONFIG_PATH" 2>/dev/null || echo "300")
+    # Check ipset (only if running)
+    if [[ "$service_running" == true ]]; then
+        if ! ipset list "$ipset_name" &>/dev/null 2>&1; then
+            ((health_issues++))
+        fi
+        if [[ ! -S "$socket" ]]; then
+            ((health_issues++))
+        fi
+    fi
 
-        echo -e "  Detection threshold:      ${threshold} SYN packets per ${window}ms window"
-        echo -e "  Block duration:           ${block_duration} seconds"
-        echo -e "  Config file:              ${CONFIG_PATH}"
+    if [[ "$service_running" == false ]]; then
+        health_msg="${YELLOW}Service stopped${NC}"
+    elif [[ $health_issues -eq 0 ]]; then
+        health_msg="${GREEN}All systems operational${NC}"
     else
-        print_warning "Configuration file not found at ${CONFIG_PATH}"
+        health_msg="${YELLOW}${health_issues} issue(s) detected${NC} - run '${PROGRAM_NAME} health' for details"
     fi
 
-    # Whitelist summary
-    if [[ -f "$WHITELIST_PATH" ]]; then
-        local whitelist_count
-        whitelist_count=$(grep -cvE '^\s*#|^\s*$' "$WHITELIST_PATH" 2>/dev/null || echo "0")
-        echo -e "  Whitelist entries:        ${whitelist_count}"
-    else
-        echo -e "  Whitelist entries:        ${DIM}0 (file not found)${NC}"
-    fi
-
-    echo ""
-
-    # Quick health indicators
-    print_header "Health"
-    echo -e "${DIM}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    local health_ok=true
-
-    # Check ipset
-    if command_exists ipset && ipset list "$ipset_name" &>/dev/null; then
-        print_success "Firewall rules configured (ipset: $ipset_name)"
-    else
-        print_warning "ipset '$ipset_name' not found (may be created on service start)"
-        health_ok=false
-    fi
-
-    # Check iptables rules
-    if command_exists iptables && sudo iptables -L INPUT -n 2>/dev/null | grep -q "$ipset_name"; then
-        print_success "iptables DROP rule active"
-    else
-        print_warning "iptables DROP rule not found (may be created on service start)"
-    fi
-
-    # Check metrics socket
-    if [[ -S "$socket" ]]; then
-        print_success "Metrics socket available"
-    elif systemctl is-active --quiet "$SERVICE_NAME"; then
-        print_warning "Metrics socket not found at $socket"
-        health_ok=false
-    fi
-
+    echo -e "Health: ${health_msg}"
     echo ""
 }
 
