@@ -23,6 +23,7 @@ extern int Unity_TestsFailed;
 #define TEST_ASSERT_EQUAL(expected, actual) TEST_ASSERT((expected) == (actual))
 #define TEST_ASSERT_NOT_EQUAL(expected, actual) TEST_ASSERT((expected) != (actual))
 #define TEST_ASSERT_EQUAL_INT(expected, actual) TEST_ASSERT((expected) == (actual))
+#define TEST_ASSERT_EQUAL_UINT8(expected, actual) TEST_ASSERT((expected) == (actual))
 #define TEST_ASSERT_EQUAL_UINT32(expected, actual) TEST_ASSERT((expected) == (actual))
 #define TEST_ASSERT_EQUAL_UINT64(expected, actual) TEST_ASSERT((expected) == (actual))
 #define TEST_ASSERT_EQUAL_STRING(expected, actual) TEST_ASSERT(strcmp(expected, actual) == 0)
@@ -30,6 +31,11 @@ extern int Unity_TestsFailed;
 #define TEST_ASSERT_NOT_NULL(pointer) TEST_ASSERT((pointer) != NULL)
 #define TEST_ASSERT_GREATER_THAN(threshold, actual) TEST_ASSERT((actual) > (threshold))
 #define TEST_ASSERT_LESS_THAN(threshold, actual) TEST_ASSERT((actual) < (threshold))
+#define TEST_ASSERT_GREATER_OR_EQUAL(threshold, actual) TEST_ASSERT((actual) >= (threshold))
+#define TEST_ASSERT_EQUAL_PTR(expected, actual) TEST_ASSERT((expected) == (actual))
+
+/* Test pass macro - test passes by default if no assertions fail */
+#define TEST_PASS() do { } while(0)
 
 /* Test framework functions */
 void UnityBegin(const char* filename);
