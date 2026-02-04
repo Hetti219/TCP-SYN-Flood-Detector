@@ -172,7 +172,6 @@ TEST_CASE(test_procparse_multiple_syn_recv) {
 
     cleanup_mock_proc_file();
     TEST_PASS();
-}
 
 TEST_CASE(test_procparse_specific_ip_filtering) {
     /* Test counting SYN_RECV from a specific IP
@@ -180,7 +179,7 @@ TEST_CASE(test_procparse_specific_ip_filtering) {
      * Scenario: Multiple connections, some from target IP, some from others
      * Expected: Only connections from target IP should be counted
      */
-
+        "   2: 0100007F:0050 0201A8C0:1234 03 00000000:00000000 00:00000000 00:00000000     0        0 12347\n"
     /* Test IP: 192.168.1.1 = 0xC0A80101 network order = 0101A8C0 in /proc */
     uint32_t target_ip = inet_addr("192.168.1.1");
 
