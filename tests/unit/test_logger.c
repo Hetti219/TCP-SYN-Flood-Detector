@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <errno.h>
 
 /* Note: Testing logger is challenging because:
  * 1. It writes to systemd journal or stderr
