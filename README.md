@@ -8,6 +8,7 @@ A high-performance userspace daemon for detecting and mitigating TCP SYN flood a
 
 ![CI/CD Pipeline](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/ci.yml/badge.svg)
 ![CodeQL](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
+![Code Quality](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/code-quality.yml/badge.svg)
 
 ## Overview
 
@@ -155,6 +156,7 @@ Based on your selection, we recommend the "balanced" profile.
 ```
 
 The wizard will:
+
 - Ask about your server type
 - Recommend an optimal configuration preset
 - Allow you to review detailed settings
@@ -223,6 +225,7 @@ For manual installation or building from source, see [INSTALL.md](docs/INSTALL.m
 ## Configuration
 
 The configuration file (`/etc/synflood-detector/synflood-detector.conf`) contains **comprehensive inline documentation** with:
+
 - Detailed explanations of each parameter
 - Recommended value ranges (conservative, balanced, aggressive)
 - When and why to adjust settings
@@ -274,12 +277,12 @@ logging = {
 
 Instead of manually editing configuration, use pre-built presets optimized for different scenarios:
 
-| Preset | Threshold | Block Duration | Best For |
-|--------|-----------|----------------|----------|
-| **conservative** | 200 SYN/sec | 2 minutes | Learning, testing, low-traffic servers |
-| **balanced** | 100 SYN/sec | 5 minutes | Most production servers (recommended) |
-| **aggressive** | 50 SYN/sec | 10 minutes | High-security, servers under attack |
-| **high-traffic** | 500 SYN/sec | 3 minutes | Popular sites, APIs, CDN edges |
+| Preset           | Threshold   | Block Duration | Best For                               |
+| ---------------- | ----------- | -------------- | -------------------------------------- |
+| **conservative** | 200 SYN/sec | 2 minutes      | Learning, testing, low-traffic servers |
+| **balanced**     | 100 SYN/sec | 5 minutes      | Most production servers (recommended)  |
+| **aggressive**   | 50 SYN/sec  | 10 minutes     | High-security, servers under attack    |
+| **high-traffic** | 500 SYN/sec | 3 minutes      | Popular sites, APIs, CDN edges         |
 
 ```bash
 # List available presets
