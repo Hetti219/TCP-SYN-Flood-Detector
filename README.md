@@ -416,7 +416,12 @@ synflood-detector/
 │   ├── INSTALL.md              # Installation guide
 │   ├── CONFIGURATION.md        # Configuration reference
 │   └── TROUBLESHOOTING.md      # Common issues and solutions
-└── tests/                      # Unit and integration tests
+└── tests/                      # Test suite (13 test suites)
+    ├── unit/                   # Unit tests for modules
+    ├── integration/            # Integration and performance tests
+    ├── unity/                  # Unity test framework
+    ├── README.md               # Test documentation
+    └── RUN_TESTS.md            # Quick test guide
 ```
 
 ## Documentation
