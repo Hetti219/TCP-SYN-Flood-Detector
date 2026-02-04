@@ -24,7 +24,7 @@ curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/mai
 
 ```bash
 # Install specific version
-curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --version v1.0.0
+curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --version v1.1.0
 
 # Non-interactive mode (use defaults, skip wizard)
 curl -fsSL https://raw.githubusercontent.com/Hetti219/TCP-SYN-Flood-Detector/main/install.sh | sudo bash -s -- --non-interactive
@@ -136,7 +136,7 @@ Download pre-built binaries from [GitHub Releases](https://github.com/Hetti219/T
 
 ```bash
 # Set version
-VERSION="v1.0.0"  # Replace with desired version
+VERSION="v1.1.0"  # Replace with desired version
 
 # Download release
 wget "https://github.com/Hetti219/TCP-SYN-Flood-Detector/releases/download/${VERSION}/synflood-detector-${VERSION}-linux-x86_64.tar.gz"
