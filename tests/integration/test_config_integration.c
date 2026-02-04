@@ -14,26 +14,43 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <fcntl.h>
 
 #define TEST_CONFIG_FILE "/tmp/synflood_test_config.conf"
 #define TEST_WHITELIST_FILE "/tmp/synflood_test_whitelist.txt"
 
 /* Helper to create a test config file */
 static void create_test_config(const char *content) {
-    FILE *fp = fopen(TEST_CONFIG_FILE, "w");
-    if (fp) {
-        fprintf(fp, "%s", content);
-        fclose(fp);
+    int fd = open(TEST_CONFIG_FILE, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        return;
     }
+
+    FILE *fp = fdopen(fd, "w");
+    if (!fp) {
+        close(fd);
+        return;
+    }
+
+    fprintf(fp, "%s", content);
+    fclose(fp);
 }
 
 /* Helper to create a test whitelist file */
 static void create_test_whitelist(const char *content) {
-    FILE *fp = fopen(TEST_WHITELIST_FILE, "w");
-    if (fp) {
-        fprintf(fp, "%s", content);
-        fclose(fp);
+    int fd = open(TEST_WHITELIST_FILE, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        return;
     }
+
+    FILE *fp = fdopen(fd, "w");
+    if (!fp) {
+        close(fd);
+        return;
+    }
+
+    fprintf(fp, "%s", content);
+    fclose(fp);
 }
 
 /* Helper to cleanup test files */
