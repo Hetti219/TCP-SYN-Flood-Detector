@@ -23,8 +23,6 @@ TEST_CASE(test_whitelist_prevents_tracking) {
     whitelist_add(&whitelist, "10.0.0.0/8");
     whitelist_add(&whitelist, "192.168.0.0/16");
 
-    uint64_t now = get_monotonic_ns();
-
     /* Simulate traffic from whitelisted IP */
     uint32_t trusted_ip = inet_addr("10.1.2.3");
     TEST_ASSERT_TRUE(whitelist_check(whitelist, trusted_ip));
