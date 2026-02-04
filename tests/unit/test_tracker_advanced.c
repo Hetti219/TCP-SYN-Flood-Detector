@@ -7,6 +7,7 @@
 #include "../../src/analysis/tracker.h"
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <unistd.h>
 
 TEST_CASE(test_tracker_lru_eviction) {
     /* Test LRU eviction when max_entries is reached */
@@ -24,30 +25,30 @@ TEST_CASE(test_tracker_lru_eviction) {
     uint32_t ip2 = inet_addr("192.168.1.2");
     uint32_t ip3 = inet_addr("192.168.1.3");
 
-    ip_tracker_t *t1 = tracker_get_or_create(table, ip1, now);
+    ip_tracker_t *t1 = tracker_get_or_create(table, ip1);
     TEST_ASSERT_NOT_NULL(t1);
     usleep(1000);  /* Small delay to differentiate last_seen_ns */
 
-    ip_tracker_t *t2 = tracker_get_or_create(table, ip2, now + 1000);
+    ip_tracker_t *t2 = tracker_get_or_create(table, ip2);
     TEST_ASSERT_NOT_NULL(t2);
     usleep(1000);
 
-    ip_tracker_t *t3 = tracker_get_or_create(table, ip3, now + 2000);
+    ip_tracker_t *t3 = tracker_get_or_create(table, ip3);
     TEST_ASSERT_NOT_NULL(t3);
 
     /* Verify all 3 are tracked */
-    tracker_stats_t stats;
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(3, stats.entry_count);
+    size_t entry_count, blocked_count;
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(3, entry_count);
 
     /* Add 4th IP - should trigger LRU eviction of oldest (ip1) */
     uint32_t ip4 = inet_addr("192.168.1.4");
-    ip_tracker_t *t4 = tracker_get_or_create(table, ip4, now + 3000);
+    ip_tracker_t *t4 = tracker_get_or_create(table, ip4);
     TEST_ASSERT_NOT_NULL(t4);
 
     /* Still should have 3 entries (max limit) */
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(3, stats.entry_count);
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(3, entry_count);
 
     /* ip1 should be evicted, others should remain */
     TEST_ASSERT_NULL(tracker_get(table, ip1));
@@ -77,7 +78,7 @@ TEST_CASE(test_tracker_hash_collision_handling) {
         snprintf(ip_str, sizeof(ip_str), "10.0.0.%d", i);
         ips[i] = inet_addr(ip_str);
 
-        ip_tracker_t *tracker = tracker_get_or_create(table, ips[i], now);
+        ip_tracker_t *tracker = tracker_get_or_create(table, ips[i]);
         TEST_ASSERT_NOT_NULL(tracker);
         tracker->syn_count = i + 1;  /* Unique value */
     }
@@ -102,7 +103,7 @@ TEST_CASE(test_tracker_window_expiry) {
     uint64_t window_start = get_monotonic_ns();
 
     /* Create tracker and increment SYN count */
-    ip_tracker_t *tracker = tracker_get_or_create(table, ip, window_start);
+    ip_tracker_t *tracker = tracker_get_or_create(table, ip);
     tracker->syn_count = 50;
     tracker->window_start_ns = window_start;
 
@@ -134,15 +135,15 @@ TEST_CASE(test_tracker_block_expiry_boundaries) {
     uint32_t ip2 = inet_addr("10.0.0.2");
     uint32_t ip3 = inet_addr("10.0.0.3");
 
-    ip_tracker_t *t1 = tracker_get_or_create(table, ip1, now);
+    ip_tracker_t *t1 = tracker_get_or_create(table, ip1);
     t1->blocked = true;
     t1->block_expiry_ns = now + sec_to_ns(5);  /* Expires in 5 seconds */
 
-    ip_tracker_t *t2 = tracker_get_or_create(table, ip2, now);
+    ip_tracker_t *t2 = tracker_get_or_create(table, ip2);
     t2->blocked = true;
     t2->block_expiry_ns = now + sec_to_ns(10);  /* Expires in 10 seconds */
 
-    ip_tracker_t *t3 = tracker_get_or_create(table, ip3, now);
+    ip_tracker_t *t3 = tracker_get_or_create(table, ip3);
     t3->blocked = true;
     t3->block_expiry_ns = now + sec_to_ns(15);  /* Expires in 15 seconds */
 
@@ -213,22 +214,22 @@ TEST_CASE(test_tracker_max_entries_boundary) {
         snprintf(ip_str, sizeof(ip_str), "10.0.0.%d", i);
         uint32_t ip = inet_addr(ip_str);
 
-        ip_tracker_t *tracker = tracker_get_or_create(table, ip, now + i * 1000);
+        ip_tracker_t *tracker = tracker_get_or_create(table, ip);
         TEST_ASSERT_NOT_NULL(tracker);
     }
 
-    tracker_stats_t stats;
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(max_entries, stats.entry_count);
+    size_t entry_count, blocked_count;
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(max_entries, entry_count);
 
     /* Add one more - should trigger eviction */
     uint32_t overflow_ip = inet_addr("10.0.0.99");
-    ip_tracker_t *tracker = tracker_get_or_create(table, overflow_ip, now + 1000000);
+    ip_tracker_t *tracker = tracker_get_or_create(table, overflow_ip);
     TEST_ASSERT_NOT_NULL(tracker);
 
     /* Still at max_entries */
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(max_entries, stats.entry_count);
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(max_entries, entry_count);
 
     tracker_destroy(table);
 }
@@ -256,9 +257,9 @@ TEST_CASE(test_tracker_clear_empty_table) {
     /* Clear empty table - should not crash */
     tracker_clear(table);
 
-    tracker_stats_t stats;
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(0, stats.entry_count);
+    size_t entry_count, blocked_count;
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(0, entry_count);
 
     tracker_destroy(table);
 }
@@ -287,7 +288,7 @@ TEST_CASE(test_tracker_get_expired_none) {
 
     /* Add blocked IP with future expiry */
     uint32_t ip = inet_addr("10.0.0.1");
-    ip_tracker_t *tracker = tracker_get_or_create(table, ip, now);
+    ip_tracker_t *tracker = tracker_get_or_create(table, ip);
     tracker->blocked = true;
     tracker->block_expiry_ns = now + sec_to_ns(3600);  /* 1 hour from now */
 
@@ -315,7 +316,7 @@ TEST_CASE(test_tracker_get_expired_buffer_limit) {
         snprintf(ip_str, sizeof(ip_str), "10.0.0.%d", i);
         uint32_t ip = inet_addr(ip_str);
 
-        ip_tracker_t *tracker = tracker_get_or_create(table, ip, now);
+        ip_tracker_t *tracker = tracker_get_or_create(table, ip);
         tracker->blocked = true;
         tracker->block_expiry_ns = expiry;
     }
@@ -339,20 +340,20 @@ TEST_CASE(test_tracker_idempotent_get_or_create) {
     uint32_t now = get_monotonic_ns();
 
     /* First call creates */
-    ip_tracker_t *t1 = tracker_get_or_create(table, ip, now);
+    ip_tracker_t *t1 = tracker_get_or_create(table, ip);
     TEST_ASSERT_NOT_NULL(t1);
     t1->syn_count = 42;
 
     /* Second call returns same tracker */
-    ip_tracker_t *t2 = tracker_get_or_create(table, ip, now);
+    ip_tracker_t *t2 = tracker_get_or_create(table, ip);
     TEST_ASSERT_NOT_NULL(t2);
     TEST_ASSERT_EQUAL_PTR(t1, t2);
     TEST_ASSERT_EQUAL_UINT32(42, t2->syn_count);
 
     /* Stats should still show 1 entry */
-    tracker_stats_t stats;
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(1, stats.entry_count);
+    size_t entry_count, blocked_count;
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(1, entry_count);
 
     tracker_destroy(table);
 }
@@ -374,13 +375,13 @@ TEST_CASE(test_tracker_large_table) {
                  i / 256 / 256, (i / 256) % 256, i % 256);
         uint32_t ip = inet_addr(ip_str);
 
-        ip_tracker_t *tracker = tracker_get_or_create(table, ip, now);
+        ip_tracker_t *tracker = tracker_get_or_create(table, ip);
         TEST_ASSERT_NOT_NULL(tracker);
     }
 
-    tracker_stats_t stats;
-    tracker_get_stats(table, &stats);
-    TEST_ASSERT_EQUAL_UINT32(100, stats.entry_count);
+    size_t entry_count, blocked_count;
+    tracker_get_stats(table, &entry_count, &blocked_count);
+    TEST_ASSERT_EQUAL_UINT32(100, entry_count);
 
     tracker_destroy(table);
 }
