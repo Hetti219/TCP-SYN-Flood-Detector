@@ -226,7 +226,6 @@ TEST_CASE(test_procparse_get_unique_ips) {
     /* Cannot test without refactoring */
 
     cleanup_mock_proc_file();
-    TEST_PASS();
 }
 
 TEST_CASE(test_procparse_buffer_overflow_protection) {
