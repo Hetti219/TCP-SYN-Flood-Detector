@@ -82,7 +82,7 @@ TCP SYN Flood Detector - Installation Script
 Usage: $0 [OPTIONS]
 
 Options:
-  --version VERSION     Install specific version (e.g., v1.0.0)
+  --version VERSION     Install specific version (e.g., v1.1.0)
   --non-interactive    Skip all prompts, use defaults
   --guided             Force guided setup wizard
   --no-wizard          Skip guided setup wizard
@@ -95,7 +95,7 @@ Examples:
   sudo $0
 
   # Install specific version
-  sudo $0 --version v1.0.0
+  sudo $0 --version v1.1.0
 
   # Non-interactive with defaults
   sudo $0 --non-interactive
