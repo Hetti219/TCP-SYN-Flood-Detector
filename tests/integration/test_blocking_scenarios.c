@@ -369,7 +369,6 @@ TEST_CASE(test_progressive_blocking) {
 
     tracker_table_t *tracker = tracker_create(256, 1000);
     uint32_t ip = inet_addr("203.0.113.100");
-    uint32_t syn_threshold = 100;
 
     uint64_t time = get_monotonic_ns();
 
