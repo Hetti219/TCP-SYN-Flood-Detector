@@ -8,6 +8,8 @@
 #include <arpa/inet.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #define TEST_WHITELIST_FILE "/tmp/synflood_test_whitelist.conf"
 
@@ -287,7 +289,10 @@ TEST_CASE(test_whitelist_file_missing) {
 TEST_CASE(test_whitelist_file_malformed_lines) {
     /* Test file with malformed lines */
 
-    FILE *fp = fopen(TEST_WHITELIST_FILE, "w");
+    int fd = open(TEST_WHITELIST_FILE, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    TEST_ASSERT_TRUE(fd >= 0);
+
+    FILE *fp = fdopen(fd, "w");
     TEST_ASSERT_NOT_NULL(fp);
 
     fprintf(fp, "192.168.1.0/24\n");     /* Valid */
