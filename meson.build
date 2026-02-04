@@ -234,6 +234,38 @@ test_detection_flow = executable('test_detection_flow',
   dependencies: deps,
 )
 
+test_config_integration = executable('test_config_integration',
+  'tests/integration/test_config_integration.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_whitelist_integration = executable('test_whitelist_integration',
+  'tests/integration/test_whitelist_integration.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_blocking_scenarios = executable('test_blocking_scenarios',
+  'tests/integration/test_blocking_scenarios.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_performance_stress = executable('test_performance_stress',
+  'tests/integration/test_performance_stress.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
 # Register tests with meson
 test('Common utilities', test_common)
 test('Configuration', test_config)
@@ -244,3 +276,7 @@ test('Proc Parser', test_procparse)
 test('IP Tracker Advanced', test_tracker_advanced)
 test('Whitelist Advanced', test_whitelist_advanced)
 test('Detection Flow', test_detection_flow)
+test('Config Integration', test_config_integration)
+test('Whitelist Integration', test_whitelist_integration)
+test('Blocking Scenarios', test_blocking_scenarios)
+test('Performance Stress', test_performance_stress)
