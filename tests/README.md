@@ -13,9 +13,17 @@ tests/
 │   ├── test_common.c
 │   ├── test_config.c
 │   ├── test_whitelist.c
-│   └── test_tracker.c
+│   ├── test_whitelist_advanced.c
+│   ├── test_tracker.c
+│   ├── test_tracker_advanced.c
+│   ├── test_logger.c
+│   └── test_procparse.c
 ├── integration/        # Integration tests
-│   └── test_detection_flow.c
+│   ├── test_detection_flow.c
+│   ├── test_config_integration.c
+│   ├── test_whitelist_integration.c
+│   ├── test_blocking_scenarios.c
+│   └── test_performance_stress.c
 ├── fuzz/               # Fuzzing tests (future)
 ├── MANUAL_TESTING.md   # Manual test procedures
 └── README.md          # This file
@@ -35,12 +43,22 @@ meson test -C build
 ### Run Specific Tests
 
 ```bash
-# Run individual test
+# Run individual unit tests
 meson test -C build "Common utilities"
 meson test -C build "Configuration"
 meson test -C build "Whitelist"
+meson test -C build "Whitelist Advanced"
 meson test -C build "IP Tracker"
+meson test -C build "IP Tracker Advanced"
+meson test -C build "Logger"
+meson test -C build "Proc Parser"
+
+# Run integration tests
 meson test -C build "Detection Flow"
+meson test -C build "Config Integration"
+meson test -C build "Whitelist Integration"
+meson test -C build "Blocking Scenarios"
+meson test -C build "Performance Stress"
 ```
 
 ### Run Tests with Verbose Output
@@ -52,12 +70,22 @@ meson test -C build --verbose
 ### Run Tests Directly
 
 ```bash
-# After building, you can run test executables directly
+# Unit tests
 ./build/test_common
 ./build/test_config
 ./build/test_whitelist
+./build/test_whitelist_advanced
 ./build/test_tracker
+./build/test_tracker_advanced
+./build/test_logger
+./build/test_procparse
+
+# Integration tests
 ./build/test_detection_flow
+./build/test_config_integration
+./build/test_whitelist_integration
+./build/test_blocking_scenarios
+./build/test_performance_stress
 ```
 
 ## Test Coverage
@@ -107,6 +135,36 @@ Tests the complete detection flow:
 - Time window expiry handling
 - Multiple simultaneous attackers
 - Block expiry and unblocking
+
+#### test_config_integration.c
+Tests configuration integration with system components:
+- Config affecting tracker table size and behavior
+- Config affecting whitelist file loading
+- Config validation with real components
+- Dynamic configuration reload scenarios
+
+#### test_whitelist_integration.c
+Tests whitelist integration with detection and blocking:
+- Whitelist preventing false positives in detection
+- Whitelist override during active attacks
+- Multiple CIDR ranges interacting with tracker
+- Whitelist file format and reload behavior
+
+#### test_blocking_scenarios.c
+Tests various IP blocking and expiry scenarios:
+- Automatic blocking on threshold breach
+- Block expiry and IP unblocking
+- Multiple IPs blocked simultaneously
+- Block duration configuration effects
+- Tracker state during and after blocking
+
+#### test_performance_stress.c
+Performance and stress testing:
+- High-volume SYN packet processing
+- Tracker performance under load (10,000+ IPs)
+- Memory usage and leak detection
+- Concurrent access patterns
+- Rate limiting edge cases
 
 ## Test Requirements
 
