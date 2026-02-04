@@ -13,9 +13,9 @@
 #include <limits.h>
 
 /* Version information */
-#define SYNFLOOD_VERSION "1.0.0"
+#define SYNFLOOD_VERSION "1.1.0"
 #define SYNFLOOD_VERSION_MAJOR 1
-#define SYNFLOOD_VERSION_MINOR 0
+#define SYNFLOOD_VERSION_MINOR 1
 #define SYNFLOOD_VERSION_PATCH 0
 
 /* Default configuration values */
