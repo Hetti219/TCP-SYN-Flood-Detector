@@ -1,0 +1,59 @@
+# Automatic PR labeling configuration
+
+# Documentation changes
+documentation:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'docs/**/*'
+      - '*.md'
+      - 'README*'
+      - '.github/CONTRIBUTING.md'
+      - '.github/PULL_REQUEST_TEMPLATE.md'
+
+# Source code changes
+core:
+  - changed-files:
+    - any-glob-to-any-file: 'src/**/*.c'
+
+# Header files
+headers:
+  - changed-files:
+    - any-glob-to-any-file: 'include/**/*.h'
+
+# Test changes
+tests:
+  - changed-files:
+    - any-glob-to-any-file: 'tests/**/*.c'
+
+# Build system
+build:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'meson.build'
+      - 'meson_options.txt'
+
+# Configuration files
+config:
+  - changed-files:
+    - any-glob-to-any-file: 'conf/**/*'
+
+# CI/CD
+ci-cd:
+  - changed-files:
+    - any-glob-to-any-file: '.github/workflows/**/*'
+
+# Tools and scripts
+tools:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'tools/**/*'
+      - '*.sh'
+      - 'install.sh'
+      - 'uninstall.sh'
+
+# Dependencies
+dependencies:
+  - changed-files:
+    - any-glob-to-any-file:
+      - 'meson.build'
+      - '**/dependency*'

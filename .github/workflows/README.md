@@ -1,6 +1,10 @@
 # GitHub Actions Workflows
 
-This directory contains CI/CD workflows for the TCP SYN Flood Detector project.
+This directory contains CI/CD workflows for the TCP SYN Flood Detector project. These workflows are configured for a public repository accepting community contributions.
+
+## 🔒 Security Model
+
+**Important:** These workflows DO NOT auto-merge PRs. All contributions require manual review by maintainers after passing automated checks.
 
 ## Workflows Overview
 
@@ -77,6 +81,85 @@ This directory contains CI/CD workflows for the TCP SYN Flood Detector project.
 
 ---
 
+### 4. Dependency Review ([dependency-review.yml](dependency-review.yml))
+
+**Triggers**: All Pull Requests
+
+**Purpose**: Scan dependencies for security vulnerabilities and license compliance
+
+**Features**:
+- Fails on moderate+ severity vulnerabilities
+- Checks for incompatible licenses (GPL-3.0, AGPL-3.0)
+- Verifies system dependencies can be installed
+- Comments on PRs when issues are found
+
+**Required for PR Merge**: ✅ Yes
+
+---
+
+### 5. Code Quality ([code-quality.yml](code-quality.yml))
+
+**Triggers**: Pull Requests modifying C/H files
+
+**Purpose**: Enforce code quality standards and best practices
+
+**Checks**:
+- Code style (debug prints, hardcoded paths, TODOs)
+- File permissions (source files shouldn't be executable)
+- Trailing whitespace and indentation consistency
+- Cyclomatic complexity analysis (with lizard)
+- Security patterns (unsafe functions, potential vulnerabilities)
+
+**Required for PR Merge**: ⚠️ Warning only (non-blocking, but should be addressed)
+
+---
+
+### 6. PR Validation ([pr-checks.yml](pr-checks.yml))
+
+**Triggers**: PR opened, updated, or edited
+
+**Purpose**: Validate PR structure and guide contributors
+
+**Checks**:
+- Commit message quality
+- Breaking changes detection
+- PR size warnings (>1000 lines or >20 files)
+- Required file updates (docs, tests)
+- Auto-merge prevention
+- First-time contributor welcome
+
+**Required for PR Merge**: ℹ️ Informational (provides guidance)
+
+---
+
+### 7. PR Labels ([pr-labels.yml](pr-labels.yml))
+
+**Triggers**: PR opened or updated
+
+**Purpose**: Automatic PR organization and contributor guidance
+
+**Features**:
+- Auto-labels based on changed files (documentation, core, tests, build, etc.)
+- Checks PR description quality
+- Reminds contributors to add tests for code changes
+- Adds `needs-tests` label when applicable
+
+**Configuration**: See [.github/labeler.yml](../labeler.yml)
+
+---
+
+## Required Status Checks for PR Merge
+
+To merge a PR, the following must be satisfied:
+
+1. ✅ **CI/CD Pipeline** - All jobs pass (build-and-test, static-analysis, security-hardening-check, documentation-check)
+2. ✅ **CodeQL Security Analysis** - No critical vulnerabilities detected
+3. ✅ **Dependency Review** - No vulnerable dependencies or license conflicts
+4. 👀 **Manual Review** - At least one maintainer approval required
+5. 🚫 **No Auto-Merge** - All PRs merged manually by maintainers
+
+---
+
 ## Workflow Status Badges
 
 Add these badges to your README.md to show build status:
@@ -84,6 +167,87 @@ Add these badges to your README.md to show build status:
 ```markdown
 ![CI/CD Pipeline](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/ci.yml/badge.svg)
 ![CodeQL](https://github.com/Hetti219/TCP-SYN-Flood-Detector/actions/workflows/codeql.yml/badge.svg)
+```
+
+---
+
+## For Contributors
+
+### What to Expect When Opening a PR
+
+When you submit a pull request:
+
+1. **Automated checks start immediately**
+   - Build & test on multiple platforms/compilers
+   - Security scanning with CodeQL
+   - Code quality analysis
+   - Dependency security review
+
+2. **You'll receive automated feedback**
+   - Bot comments about PR structure and quality
+   - Auto-labeling based on changed files
+   - Reminders about tests/documentation if needed
+   - Welcome message (for first-time contributors)
+
+3. **Maintainer review**
+   - After automated checks pass, maintainers review manually
+   - They may request changes or ask questions
+   - Once approved, maintainers merge manually (no auto-merge)
+
+### Making Checks Pass
+
+**If CI/CD Pipeline fails:**
+- Check build logs in the Actions tab
+- Run tests locally: `meson test -C build --verbose`
+- Fix any compiler warnings or errors
+
+**If CodeQL finds issues:**
+- Review security findings in the Security tab
+- Address identified vulnerabilities
+- Run `cppcheck` locally to catch issues early
+
+**If Dependency Review fails:**
+- Check for vulnerable dependencies
+- Update to patched versions if available
+
+**If Code Quality warns:**
+- Review the complexity and security reports
+- Fix security patterns (unsafe string functions, etc.)
+- Clean up code style issues
+
+---
+
+## For Maintainers
+
+### Merging PRs - Required Checklist
+
+Before merging any PR:
+
+1. ✅ All automated checks pass
+2. 👀 Manual code review completed
+3. 🔒 Security implications considered
+4. 📚 Documentation updated (if behavior changed)
+5. 🧪 Tests added/updated (for new features or fixes)
+6. ✍️ Merge manually - never use auto-merge
+
+### Branch Protection Settings
+
+Configure these settings on `main` branch:
+
+```yaml
+Require pull request reviews: 1 approval
+Require status checks to pass:
+  - build-and-test (Ubuntu 22.04, gcc)
+  - build-and-test (Ubuntu 22.04, clang)
+  - build-and-test (Ubuntu 24.04, gcc)
+  - build-and-test (Ubuntu 24.04, clang)
+  - static-analysis
+  - security-hardening-check
+  - CodeQL
+  - dependency-review
+Require conversation resolution: true
+Do not allow bypassing: true
+Restrict pushes to admins only
 ```
 
 ---
@@ -210,10 +374,31 @@ When modifying workflows:
 
 ## Security Considerations
 
+### Workflow Security
+
 - Workflows run in isolated GitHub-hosted runners
-- No secrets are exposed in logs
+- Minimal permissions (principle of least privilege)
+- No secrets exposed in logs
 - CodeQL scans are private and only visible to repository collaborators
 - Release artifacts are signed with SHA256 checksums
+- **No auto-merge capabilities** - all PRs require manual review
+
+### Security Best Practices Implemented
+
+- ✅ All workflows have explicit `permissions:` blocks
+- ✅ Pull request workflows are read-only by default
+- ✅ No execution of untrusted code from PRs
+- ✅ Dependency scanning on all PRs
+- ✅ Automated security vulnerability detection
+- ✅ Manual approval required before merge
+
+### Reporting Workflow Security Issues
+
+If you discover a security vulnerability in these workflows:
+
+1. **Do not open a public issue**
+2. Contact maintainers privately via email
+3. See SECURITY.md for responsible disclosure process
 
 ---
 

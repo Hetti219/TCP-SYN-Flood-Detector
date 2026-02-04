@@ -1,0 +1,309 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+    branches: [ '**' ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate-pr:
+    name: Validate PR Structure
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commit messages
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            // Get commits
+            const { data: commits } = await github.rest.pulls.listCommits({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            let issues = [];
+
+            // Check each commit message
+            for (const commit of commits) {
+              const message = commit.commit.message;
+              const firstLine = message.split('\n')[0];
+
+              // Check if commit message is too short
+              if (firstLine.length < 10) {
+                issues.push(`- Commit "${firstLine}" is too short (< 10 chars)`);
+              }
+
+              // Check if commit message is too long
+              if (firstLine.length > 72) {
+                issues.push(`- Commit "${firstLine.substring(0, 50)}..." exceeds 72 chars`);
+              }
+
+              // Check for common bad patterns
+              if (/^(wip|tmp|test|fix|update)$/i.test(firstLine)) {
+                issues.push(`- Commit "${firstLine}" needs a more descriptive message`);
+              }
+            }
+
+            if (issues.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `## 📝 Commit Message Guidelines
+
+                Please improve your commit messages:
+
+                ${issues.join('\n')}
+
+                **Good commit message format:**
+                \`\`\`
+                Short summary (50 chars or less)
+
+                Detailed explanation if needed. Wrap at 72 characters.
+                Explain what and why, not how.
+
+                Co-Authored-By: Name <email@example.com>
+                \`\`\`
+
+                **Examples:**
+                - \`fix: Prevent memory leak in tracker cleanup\`
+                - \`feat: Add IPv6 support to whitelist module\`
+                - \`docs: Update installation guide for Debian 12\`
+                - \`test: Add integration tests for config reload\`
+
+                *Note: You can amend commits with \`git commit --amend\` or use interactive rebase.*`
+              });
+            }
+
+      - name: Check for breaking changes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            // Get changed files
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            // Check for changes to public APIs
+            const apiChanges = files.filter(f =>
+              f.filename.startsWith('include/') &&
+              f.filename.endsWith('.h') &&
+              (f.status === 'modified' || f.status === 'removed')
+            );
+
+            if (apiChanges.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `## ⚠️ Public API Changes Detected
+
+                This PR modifies public header files:
+                ${apiChanges.map(f => `- \`${f.filename}\``).join('\n')}
+
+                **Please ensure:**
+                - [ ] Changes are backward compatible, OR
+                - [ ] Breaking changes are documented and justified
+                - [ ] Version bump is planned (major version for breaking changes)
+                - [ ] Migration guide is provided if needed
+
+                **If this is a breaking change, please:**
+                1. Clearly document it in the PR description
+                2. Update the CHANGELOG (if exists)
+                3. Consider adding deprecation warnings first`
+              });
+
+              // Add label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['breaking-change']
+              });
+            }
+
+      - name: Check PR size
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            // Get PR stats
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number
+            });
+
+            const additions = pr.additions;
+            const deletions = pr.deletions;
+            const totalChanges = additions + deletions;
+            const fileCount = files.length;
+
+            // Warn about large PRs
+            if (totalChanges > 1000 || fileCount > 20) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `## 📊 Large PR Detected
+
+                This PR is quite large:
+                - **${fileCount}** files changed
+                - **${additions}** additions
+                - **${deletions}** deletions
+                - **${totalChanges}** total changes
+
+                **Large PRs are harder to review and more likely to introduce bugs.**
+
+                Consider:
+                - Breaking this into smaller, focused PRs
+                - Each PR should address a single concern
+                - Smaller PRs get reviewed faster
+
+                *If this PR cannot be split, please explain why in the description.*`
+              });
+
+              // Add label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['large-pr']
+              });
+            }
+
+      - name: Check for required files
+        run: |
+          echo "Checking if PR includes necessary documentation updates..."
+
+          # Get changed files
+          git fetch origin ${{ github.base_ref }}
+          changed_files=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+
+          # Check if src/ changed but docs/ didn't
+          if echo "$changed_files" | grep -q "^src/" && ! echo "$changed_files" | grep -q "^docs/\|^README.md"; then
+            echo "⚠️  Source code changed but no documentation updates"
+            echo "Consider updating documentation if behavior changed"
+          fi
+
+          # Check if new features were added
+          if echo "$changed_files" | grep -q "^src/.*\.c$"; then
+            if ! echo "$changed_files" | grep -q "^tests/"; then
+              echo "⚠️  Source files changed but no test changes detected"
+            fi
+          fi
+
+  prevent-auto-merge:
+    name: Prevent Auto-Merge
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.auto_merge != null
+
+    steps:
+      - name: Disable auto-merge
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+
+            // Disable auto-merge
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              auto_merge: null
+            });
+
+            // Comment on PR
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: pr.number,
+              body: `## 🛑 Auto-merge Disabled
+
+              This repository does not allow auto-merging of pull requests.
+
+              **All PRs require:**
+              - Manual review by maintainers
+              - All status checks passing
+              - Security review
+              - Code quality review
+
+              Your PR will be reviewed as soon as possible. Thank you for your contribution!`
+            });
+
+  welcome-first-time:
+    name: Welcome First-Time Contributors
+    runs-on: ubuntu-latest
+    if: github.event.action == 'opened'
+
+    steps:
+      - name: Check if first contribution
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const author = pr.user.login;
+
+            // Check if this is the author's first PR
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'all',
+              creator: author
+            });
+
+            // If this is their first PR (only this one exists)
+            if (prs.length === 1) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: `## 🎉 Welcome and thank you for your first contribution!
+
+                We're excited to have you contribute to the TCP SYN Flood Detector project!
+
+                **What happens next:**
+                1. ✅ Automated checks will run (CI, tests, security scans)
+                2. 👀 A maintainer will review your PR
+                3. 💬 We may ask for changes or clarifications
+                4. ✨ Once approved, your PR will be merged!
+
+                **While you wait:**
+                - Review our [Contributing Guide](.github/CONTRIBUTING.md)
+                - Check that all automated tests pass
+                - Respond to any comments from reviewers
+
+                **Tips for faster review:**
+                - Keep PRs focused on a single issue
+                - Write clear commit messages
+                - Add tests for new functionality
+                - Update documentation if needed
+
+                Thank you for helping make this project better! 🚀`
+              });
+
+              // Add label
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['first-time-contributor']
+              });
+            }

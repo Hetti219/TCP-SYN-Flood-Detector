@@ -4,13 +4,24 @@ on:
   push:
     branches: [ main, develop ]
   pull_request:
-    branches: [ main, develop ]
+    branches: [ '**' ]  # Run on PRs to any branch
   workflow_dispatch:
+
+# Ensure only one workflow runs at a time per PR
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
 
 jobs:
   build-and-test:
     name: Build & Test (${{ matrix.os }}, ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
 
     strategy:
       fail-fast: false
@@ -77,6 +88,8 @@ jobs:
   static-analysis:
     name: Static Analysis
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
@@ -135,6 +148,8 @@ jobs:
   security-hardening-check:
     name: Security Hardening Verification
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code
@@ -190,6 +205,8 @@ jobs:
   documentation-check:
     name: Documentation Validation
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
 
     steps:
     - name: Checkout code

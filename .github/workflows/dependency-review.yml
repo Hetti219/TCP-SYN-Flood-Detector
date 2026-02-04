@@ -1,0 +1,71 @@
+name: Dependency Review
+
+on:
+  pull_request:
+    branches: [ '**' ]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    name: Dependency Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail the build on critical or high severity vulnerabilities
+          fail-on-severity: moderate
+          # Deny licenses that are incompatible with MIT
+          deny-licenses: GPL-3.0, AGPL-3.0
+          # Comment on PR with results
+          comment-summary-in-pr: on-failure
+          # Allow security updates even if they have vulnerabilities
+          allow-dependencies-licenses: MIT, BSD-2-Clause, BSD-3-Clause, Apache-2.0, ISC, LGPL-2.1
+
+  check-dependencies:
+    name: Verify System Dependencies
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check for new system dependencies
+        run: |
+          echo "Checking for changes in dependency requirements..."
+
+          # Check if meson.build was modified
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -q "meson.build"; then
+            echo "⚠️  meson.build was modified - please review dependency changes"
+            echo ""
+            echo "Changed dependencies:"
+            git diff origin/${{ github.base_ref }}...HEAD meson.build | grep -E "^[+-].*dependency" || echo "No dependency() calls changed"
+          else
+            echo "✓ No changes to build system dependencies"
+          fi
+
+      - name: Install and verify dependencies
+        run: |
+          echo "Installing dependencies to verify availability..."
+          sudo apt-get update
+          sudo apt-get install -y \
+            meson \
+            ninja-build \
+            libnetfilter-queue-dev \
+            libmnl-dev \
+            ipset \
+            libipset-dev \
+            libconfig-dev \
+            libsystemd-dev \
+            pkg-config
+          echo "✓ All dependencies successfully installed"
