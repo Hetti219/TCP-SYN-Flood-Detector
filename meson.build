@@ -192,6 +192,39 @@ test_tracker = executable('test_tracker',
   dependencies: deps,
 )
 
+test_logger = executable('test_logger',
+  'tests/unit/test_logger.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_procparse = executable('test_procparse',
+  'tests/unit/test_procparse.c',
+  'src/analysis/procparse.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_tracker_advanced = executable('test_tracker_advanced',
+  'tests/unit/test_tracker_advanced.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
+test_whitelist_advanced = executable('test_whitelist_advanced',
+  'tests/unit/test_whitelist_advanced.c',
+  test_sources_common,
+  unity_sources,
+  include_directories: [inc, unity_inc],
+  dependencies: deps,
+)
+
 # Integration tests
 test_detection_flow = executable('test_detection_flow',
   'tests/integration/test_detection_flow.c',
@@ -206,4 +239,8 @@ test('Common utilities', test_common)
 test('Configuration', test_config)
 test('Whitelist', test_whitelist)
 test('IP Tracker', test_tracker)
+test('Logger', test_logger)
+test('Proc Parser', test_procparse)
+test('IP Tracker Advanced', test_tracker_advanced)
+test('Whitelist Advanced', test_whitelist_advanced)
 test('Detection Flow', test_detection_flow)
