@@ -10,6 +10,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #define TEST_WHITELIST_FILE "/tmp/synflood_test_whitelist.conf"
 
@@ -241,8 +243,11 @@ TEST_CASE(test_whitelist_empty) {
 }
 
 TEST_CASE(test_whitelist_file_loading) {
-    /* Test loading whitelist from file */
+    /* Create test file with restrictive permissions: user read/write only */
+    int fd = open(TEST_WHITELIST_FILE, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    TEST_ASSERT_NOT_EQUAL(-1, fd);
 
+    FILE *fp = fdopen(fd, "w");
     /* Create test file */
     FILE *fp = fopen(TEST_WHITELIST_FILE, "w");
     TEST_ASSERT_NOT_NULL(fp);
