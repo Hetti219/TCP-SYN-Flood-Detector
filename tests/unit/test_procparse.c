@@ -199,7 +199,6 @@ TEST_CASE(test_procparse_specific_ip_filtering) {
     /* Cannot test without refactoring */
 
     cleanup_mock_proc_file();
-    TEST_PASS();
 }
 
 TEST_CASE(test_procparse_get_unique_ips) {
