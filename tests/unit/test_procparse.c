@@ -10,17 +10,27 @@
 #include <string.h>
 #include <unistd.h>
 #include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 /* Mock /proc/net/tcp file path - will be created in /tmp */
 #define TEST_PROC_FILE "/tmp/synflood_test_proc_net_tcp"
 
 /* Helper to create a mock /proc/net/tcp file */
 static void create_mock_proc_file(const char *content) {
-    FILE *fp = fopen(TEST_PROC_FILE, "w");
-    if (fp) {
-        fprintf(fp, "%s", content);
-        fclose(fp);
+    int fd = open(TEST_PROC_FILE, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        return;
     }
+
+    FILE *fp = fdopen(fd, "w");
+    if (!fp) {
+        close(fd);
+        return;
+    }
+
+    fprintf(fp, "%s", content);
+    fclose(fp);
 }
 
 /* Helper to remove mock file */
