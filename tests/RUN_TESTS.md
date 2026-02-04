@@ -19,14 +19,24 @@ meson test -C build
 - ✅ **test_tracker_advanced.c** - Advanced tracker edge cases (14 tests)
 - ✅ **test_whitelist_advanced.c** - Advanced whitelist edge cases (19 tests)
 
-### Existing Tests
+### Unit Tests
 - test_common.c - Common utilities (6 tests)
 - test_config.c - Configuration module (6 tests)
 - test_tracker.c - IP tracker basics (9 tests)
 - test_whitelist.c - Whitelist basics (6 tests)
-- test_detection_flow.c - Integration (5 tests)
+- test_procparse.c - /proc/net/tcp parser (11 tests)
+- test_logger.c - Logger module (19 tests)
+- test_tracker_advanced.c - Advanced tracker edge cases (14 tests)
+- test_whitelist_advanced.c - Advanced whitelist edge cases (19 tests)
 
-**Total: 95 unit tests + 5 integration tests = 100 tests**
+### Integration Tests
+- test_detection_flow.c - Complete detection flow (5 tests)
+- test_config_integration.c - Config integration (varies)
+- test_whitelist_integration.c - Whitelist integration (varies)
+- test_blocking_scenarios.c - Blocking scenarios (varies)
+- test_performance_stress.c - Performance testing (varies)
+
+**Total: 13 test suites with comprehensive coverage**
 
 ## Run Individual Test Suites
 
@@ -55,8 +65,12 @@ meson test -C build
 # Proc Parser
 ./build/test_procparse
 
-# Integration
+# Integration tests
 ./build/test_detection_flow
+./build/test_config_integration
+./build/test_whitelist_integration
+./build/test_blocking_scenarios
+./build/test_performance_stress
 ```
 
 ## Run with Valgrind (Memory Check)
@@ -97,16 +111,18 @@ gdb ./build/test_tracker
 
 ## Test Coverage Summary
 
-| Module | Basic Tests | Advanced Tests | Total |
-|--------|-------------|----------------|-------|
-| Common | 6 | - | 6 |
-| Config | 6 | - | 6 |
-| Tracker | 9 | 14 | 23 |
-| Whitelist | 6 | 19 | 25 |
-| Logger | 19 | - | 19 |
-| Procparse | 11 | - | 11 |
-| Integration | 5 | - | 5 |
-| **Total** | **62** | **33** | **95** |
+| Module | Basic Tests | Advanced Tests | Integration | Total |
+|--------|-------------|----------------|-------------|-------|
+| Common | 6 | - | - | 6 |
+| Config | 6 | - | ✓ | 6+ |
+| Tracker | 9 | 14 | - | 23 |
+| Whitelist | 6 | 19 | ✓ | 25+ |
+| Logger | 19 | - | - | 19 |
+| Procparse | 11 | - | - | 11 |
+| Detection | - | - | ✓ | 5+ |
+| Blocking | - | - | ✓ | varies |
+| Performance | - | - | ✓ | varies |
+| **Total** | **62** | **33** | **5 suites** | **95+** |
 
 ## What's Tested
 
